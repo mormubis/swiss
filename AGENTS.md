@@ -71,7 +71,7 @@ pnpm lint && pnpm test && pnpm build
 
 - No runtime dependencies — keep it that way.
 - All shared internal logic (score, color history, bye eligibility, score
-  groups) lives in `src/utils.ts` and is NOT exported.
+  groups) lives in `src/utilities.ts` and is NOT exported.
 - Bye sentinel: a game with `blackId: ''` represents a bye awarded to `whiteId`.
   All internal code filters these out appropriately.
 - The Dutch system uses a blossom (maximum weight matching) algorithm
