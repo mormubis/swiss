@@ -6,3 +6,7 @@
 
 # Tests
 coverage/
+
+# Documentation
+docs/api/*
+!docs/api/.gitkeep

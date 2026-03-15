@@ -17,6 +17,47 @@ tiebreak functions (`buchholz`, `buchholzCut`, `medianBuchholz`,
 
 ---
 
+## Commands
+
+### Build
+
+```bash
+pnpm run build          # compile TypeScript → dist/ (tsconfig.build.json)
+```
+
+### Test
+
+```bash
+pnpm run test                          # run all tests once
+pnpm run test:watch                    # watch mode
+pnpm run test:coverage                 # with coverage report
+
+# Run a single test file
+pnpm run test src/__tests__/index.spec.ts
+
+# Run a single test by name (substring match)
+pnpm run test -- --reporter=verbose -t "dutch"
+```
+
+### Lint & Format
+
+```bash
+pnpm run lint           # ESLint + tsc type-check (auto-fixes style issues)
+pnpm run lint:ci        # strict — zero warnings allowed, no auto-fix
+pnpm run lint:style     # ESLint only (auto-fixes)
+pnpm run lint:types     # tsc --noEmit type-check only
+pnpm run format         # Prettier (writes changes)
+pnpm run format:ci      # Prettier check only (no writes)
+```
+
+### Full pre-PR check
+
+```bash
+pnpm lint && pnpm test && pnpm build
+```
+
+---
+
 ## FIDE References
 
 - C.04.1 Basic rules: https://handbook.fide.com/chapter/C0401202507
@@ -45,3 +86,12 @@ tiebreak functions (`buchholz`, `buchholzCut`, `medianBuchholz`,
 - Throw `RangeError` for domain violations: `round < 1`, fewer than 2 players,
   unknown player id in games.
 - Throw `TypeError` for wrong argument types.
+
+---
+
+## Publishing
+
+The package is published as `@echecs/swiss`. A GitHub Actions workflow publishes
+automatically when the `version` field in `package.json` is bumped on `main`. Do
+not manually publish. Always update `CHANGELOG.md` alongside any version bump.
+Bump patch for fixes, minor for new features, major for breaking changes.
