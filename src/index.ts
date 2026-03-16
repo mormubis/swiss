@@ -19,3 +19,5 @@ export {
 } from './tiebreaks.js';
 
 export { standings } from './standings.js';
+
+export { burstein } from './burstein.js';
