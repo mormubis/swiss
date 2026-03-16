@@ -17,3 +17,5 @@ export {
   progressive,
   sonnebornBerger,
 } from './tiebreaks.js';
+
+export { standings } from './standings.js';
