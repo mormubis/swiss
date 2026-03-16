@@ -4,58 +4,131 @@
  * Test cases sourced from bbpPairings (Apache 2.0):
  * https://github.com/BieremaBoyzProgramming/bbpPairings/tree/main/test/tests
  *
- * Each fixture is a TRF file with a known-correct expected output produced by
- * bbpPairings, which implements the FIDE Dutch system (2025 rules, effective
- * 1 February 2026).
+ * Fixture files live in @echecs/trf — imported via the local file dependency.
  *
- * The expected outputs define which player plays White and which plays Black.
- * Our implementation may assign colours differently (colour assignment is
- * separate from pairing selection), so these tests assert only the *set* of
- * pairings, not the colour assignment.
- *
- * NOTE: The content-assertion tests below are currently marked as `.todo`
- * because the current Dutch implementation uses a simplified blossom-weighted
- * approach that does not implement all 21 FIDE Dutch criteria (C.04.3).
- * Specifically, cross-group floating (criteria C5, C9, and related bracket
- * mechanics) is not yet correctly handled.
- *
- * These tests serve as the specification for a future full FIDE Dutch
- * implementation. The structural tests (correct player count, no rematches)
- * pass and are not marked todo.
+ * NOTE: Content-assertion tests are marked .todo because the current Dutch
+ * implementation uses a simplified blossom-weighted approach that does not
+ * implement all 21 FIDE Dutch criteria (C.04.3). These serve as the
+ * specification for a future full FIDE Dutch implementation.
  */
+import parse from '@echecs/trf';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { dutch } from '../dutch.js';
-import { parseTrf } from './parse-trf.js';
 
-function fixtureContent(name: string): string {
-  return readFileSync(
-    path.join(import.meta.dirname, 'fixtures', `${name}.trf`),
-    'utf8',
-  );
+import type { Game, Player } from '../types.js';
+import type { Tournament } from '@echecs/trf';
+
+// ---------------------------------------------------------------------------
+// Adapters — convert @echecs/trf Tournament to @echecs/swiss types
+// ---------------------------------------------------------------------------
+
+function toSwissPlayers(tournament: Tournament): Player[] {
+  return tournament.players.map((p) => ({
+    id: String(p.pairingNumber),
+    rating: p.rating,
+  }));
+}
+
+function toSwissGames(tournament: Tournament): Game[] {
+  const games: Game[] = [];
+  for (const player of tournament.players) {
+    for (const result of player.results) {
+      if (result.color !== 'w' || result.opponentId === null) {
+        continue;
+      }
+      let score: 0 | 0.5 | 1;
+      switch (result.result) {
+      case '1': 
+      case '+': {
+        score = 1;
+      
+      break;
+      }
+      case '0': 
+      case '-': {
+        score = 0;
+      
+      break;
+      }
+      case '=': {
+        score = 0.5;
+      
+      break;
+      }
+      default: {
+        continue;
+      }
+      }
+      games.push({
+        blackId: String(result.opponentId),
+        result: score,
+        round: result.round,
+        whiteId: String(player.pairingNumber),
+      });
+    }
+  }
+  return games;
+}
+
+/** IDs of players who have a pre-assigned Z or F bye in the target round. */
+function preAssignedIds(tournament: Tournament, targetRound: number): Set<string> {
+  const ids = new Set<string>();
+  for (const player of tournament.players) {
+    for (const result of player.results) {
+      if (
+        result.round === targetRound &&
+        (result.result === 'Z' || result.result === 'F')
+      ) {
+        ids.add(String(player.pairingNumber));
+      }
+    }
+  }
+  return ids;
+}
+
+// ---------------------------------------------------------------------------
+// Fixture loading
+// ---------------------------------------------------------------------------
+
+const FIXTURES_DIR = path.join(
+  import.meta.dirname,
+  '..',
+  '..',
+  '..',
+  'trf',
+  'src',
+  '__tests__',
+  'fixtures',
+);
+
+function loadFixture(name: string): Tournament {
+  const content = readFileSync(path.join(FIXTURES_DIR, `${name}.trf`), 'utf8');
+  const tournament = parse(content);
+  if (tournament === null) {
+    throw new Error(`Failed to parse fixture: ${name}`);
+  }
+  return tournament;
 }
 
 // ---------------------------------------------------------------------------
 // dutch_2025_C5
-//
-// 6-player tournament, 2 rounds completed. Tests Dutch criterion C5 (PAB
-// assignment). Expected round-3 pairings (from bbpPairings output):
-//   1 vs 5, 3 vs 2, 6 bye
 // ---------------------------------------------------------------------------
 describe('dutch fixture: dutch_2025_C5', () => {
-  // P4 has a pre-assigned Z-bye for round 3 — excluded from pairing
-  const { players, games, preAssigned } = parseTrf(fixtureContent('dutch_2025_C5'), 3);
-  const pairablePlayers = players.filter((p) => !preAssigned.has(p.id));
+  const tournament = loadFixture('dutch_2025_C5');
+  const excluded = preAssignedIds(tournament, 3);
+  const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
+  const games = toSwissGames(tournament);
 
   it('excludes pre-assigned players (P4 has Z-bye)', () => {
-    expect(preAssigned.has('4')).toBe(true);
-    expect(pairablePlayers).toHaveLength(5);
+    expect(excluded.has('4')).toBe(true);
+    expect(players).toHaveLength(5);
   });
 
   it('produces 2 pairings and 1 bye for round 3 (5 pairable players)', () => {
-    const result = dutch(pairablePlayers, games, 3);
+    const result = dutch(players, games, 3);
     expect(result.pairings).toHaveLength(2);
     expect(result.byes).toHaveLength(1);
   });
@@ -67,24 +140,20 @@ describe('dutch fixture: dutch_2025_C5', () => {
 
 // ---------------------------------------------------------------------------
 // dutch_2025_C9
-//
-// 5-player tournament, 1 round completed (player 5 had a Z-bye in round 1).
-// Tests Dutch criterion C9 (bye recipient minimises unplayed games).
-// Expected round-3 pairings (from bbpPairings output):
-//   2 vs 1, 3 vs 5, 4 bye
 // ---------------------------------------------------------------------------
 describe('dutch fixture: dutch_2025_C9', () => {
-  // No pre-assigned results for round 3 in this fixture
-  const { players, games, preAssigned } = parseTrf(fixtureContent('dutch_2025_C9'), 3);
-  const pairablePlayers = players.filter((p) => !preAssigned.has(p.id));
+  const tournament = loadFixture('dutch_2025_C9');
+  const excluded = preAssignedIds(tournament, 3);
+  const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
+  const games = toSwissGames(tournament);
 
   it('has no pre-assigned players for round 3', () => {
-    expect(preAssigned.size).toBe(0);
-    expect(pairablePlayers).toHaveLength(5);
+    expect(excluded.size).toBe(0);
+    expect(players).toHaveLength(5);
   });
 
   it('produces 2 pairings and 1 bye for round 3 (5 pairable players)', () => {
-    const result = dutch(pairablePlayers, games, 3);
+    const result = dutch(players, games, 3);
     expect(result.pairings).toHaveLength(2);
     expect(result.byes).toHaveLength(1);
   });
@@ -96,17 +165,12 @@ describe('dutch fixture: dutch_2025_C9', () => {
 
 // ---------------------------------------------------------------------------
 // issue_7
-//
-// 60-player tournament, 14 rounds completed. Regression test.
-// Expected round-15 pairings (from bbpPairings output):
-//   1-15, 3-2, 11-17, 7-10, 8-14, 4-6, 5-12, 9-16, 13-25, 24-22,
-//   18-29, 20-23, 19-33, 21-38, 39-26, 28-36, 31-40, 37-35, 44-46,
-//   30-32, 27-48, 47-42, 51-55, 34-50, 49-45, 53-58, 41-59, 56-43,
-//   60-52, 54-57
 // ---------------------------------------------------------------------------
 describe('dutch fixture: issue_7', () => {
-  const { players, games, preAssigned } = parseTrf(fixtureContent('issue_7'), 15);
-  const pairablePlayers = players.filter((p) => !preAssigned.has(p.id));
+  const tournament = loadFixture('issue_7');
+  const excluded = preAssignedIds(tournament, 15);
+  const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
+  const games = toSwissGames(tournament);
 
   // Expected pairings (from bbpPairings output, for the .todo test below):
   // 1-15, 3-2, 11-17, 7-10, 8-14, 4-6, 5-12, 9-16, 13-25, 24-22,
@@ -114,13 +178,13 @@ describe('dutch fixture: issue_7', () => {
   // 27-48, 47-42, 51-55, 34-50, 49-45, 53-58, 41-59, 56-43, 60-52, 54-57
 
   it('produces 30 pairings and no byes for round 15', () => {
-    const result = dutch(pairablePlayers, games, 15);
+    const result = dutch(players, games, 15);
     expect(result.pairings).toHaveLength(30);
     expect(result.byes).toHaveLength(0);
   });
 
   it('produces no rematches in round 15', () => {
-    const result = dutch(pairablePlayers, games, 15);
+    const result = dutch(players, games, 15);
     for (const pairing of result.pairings) {
       const alreadyFaced = games.some(
         (g) =>
