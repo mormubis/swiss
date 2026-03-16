@@ -21,3 +21,5 @@ export {
 export { standings } from './standings.js';
 
 export { burstein } from './burstein.js';
+
+export { dubov } from './dubov.js';
