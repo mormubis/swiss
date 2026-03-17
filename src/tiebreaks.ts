@@ -8,11 +8,7 @@ function opponentIds(playerId: string, games: Game[]): string[] {
   );
 }
 
-function buchholz(
-  playerId: string,
-  players: Player[],
-  games: Game[],
-): number {
+function buchholz(playerId: string, players: Player[], games: Game[]): number {
   let sum = 0;
   for (const id of opponentIds(playerId, games)) {
     sum += score(id, games);
@@ -82,11 +78,11 @@ function directEncounter(
   games: Game[],
 ): number {
   const playerScore = score(playerId, games);
-  const tiedPlayerIds = new Set(players
-    .filter(
-      (p) => p.id !== playerId && score(p.id, games) === playerScore,
-    )
-    .map((p) => p.id));
+  const tiedPlayerIds = new Set(
+    players
+      .filter((p) => p.id !== playerId && score(p.id, games) === playerScore)
+      .map((p) => p.id),
+  );
 
   let sum = 0;
   for (const g of gamesForPlayer(playerId, games)) {

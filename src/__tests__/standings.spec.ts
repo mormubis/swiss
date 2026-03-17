@@ -41,6 +41,12 @@ describe('standings', () => {
     expect(result.map((s) => s.rank)).toEqual([1, 2, 3, 4]);
   });
   it('throws RangeError for unknown player id in games', () => {
-    expect(() => standings(PLAYERS, [{ blackId: 'UNKNOWN', result: 1, round: 1, whiteId: 'A' }], [])).toThrow(RangeError);
+    expect(() =>
+      standings(
+        PLAYERS,
+        [{ blackId: 'UNKNOWN', result: 1, round: 1, whiteId: 'A' }],
+        [],
+      ),
+    ).toThrow(RangeError);
   });
 });

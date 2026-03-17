@@ -21,7 +21,9 @@ describe('dutch', () => {
       // Each pairing must cross the boundary
       const topHalf = new Set(['A', 'B']);
       for (const pairing of result.pairings) {
-        expect(topHalf.has(pairing.whiteId) !== topHalf.has(pairing.blackId)).toBe(true);
+        expect(
+          topHalf.has(pairing.whiteId) !== topHalf.has(pairing.blackId),
+        ).toBe(true);
       }
     });
 

@@ -6,9 +6,7 @@ type Color = 'black' | 'white';
 const BYE_SENTINEL = '';
 
 function gamesForPlayer(playerId: string, games: Game[]): Game[] {
-  return games.filter(
-    (g) => g.whiteId === playerId || g.blackId === playerId,
-  );
+  return games.filter((g) => g.whiteId === playerId || g.blackId === playerId);
 }
 
 function score(playerId: string, games: Game[]): number {

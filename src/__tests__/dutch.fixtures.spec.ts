@@ -41,26 +41,26 @@ function toSwissGames(tournament: Tournament): Game[] {
       }
       let score: 0 | 0.5 | 1;
       switch (result.result) {
-      case '1': 
-      case '+': {
-        score = 1;
-      
-      break;
-      }
-      case '0': 
-      case '-': {
-        score = 0;
-      
-      break;
-      }
-      case '=': {
-        score = 0.5;
-      
-      break;
-      }
-      default: {
-        continue;
-      }
+        case '1':
+        case '+': {
+          score = 1;
+
+          break;
+        }
+        case '0':
+        case '-': {
+          score = 0;
+
+          break;
+        }
+        case '=': {
+          score = 0.5;
+
+          break;
+        }
+        default: {
+          continue;
+        }
       }
       games.push({
         blackId: String(result.opponentId),
@@ -74,7 +74,10 @@ function toSwissGames(tournament: Tournament): Game[] {
 }
 
 /** IDs of players who have a pre-assigned Z or F bye in the target round. */
-function preAssignedIds(tournament: Tournament, targetRound: number): Set<string> {
+function preAssignedIds(
+  tournament: Tournament,
+  targetRound: number,
+): Set<string> {
   const ids = new Set<string>();
   for (const player of tournament.players) {
     for (const result of player.results) {

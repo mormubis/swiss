@@ -19,11 +19,7 @@ function assignColors(
   return { blackId: a.id, whiteId: b.id };
 }
 
-function dutch(
-  players: Player[],
-  games: Game[],
-  round: number,
-): PairingResult {
+function dutch(players: Player[], games: Game[], round: number): PairingResult {
   if (round < 1) {
     throw new RangeError('round must be >= 1');
   }
