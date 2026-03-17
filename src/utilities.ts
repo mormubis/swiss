@@ -53,12 +53,69 @@ function scoreGroups(players: Player[], games: Game[]): Map<number, Player[]> {
   return groups;
 }
 
+/**
+ * Returns true if players a and b have faced each other in any previous game.
+ */
+function hasFaced(a: string, b: string, games: Game[]): boolean {
+  return games.some(
+    (g) =>
+      (g.whiteId === a && g.blackId === b) ||
+      (g.whiteId === b && g.blackId === a),
+  );
+}
+
+/**
+ * Assigns colors to a pairing based on each player's color history.
+ * The player with a positive color preference (has played more black) gets white.
+ */
+function assignColors(
+  a: Player,
+  b: Player,
+  games: Game[],
+): { blackId: string; whiteId: string } {
+  if (colorPreference(a.id, games) > 0) {
+    return { blackId: b.id, whiteId: a.id };
+  }
+  return { blackId: a.id, whiteId: b.id };
+}
+
+/**
+ * Returns players sorted by score descending, then rating descending.
+ * This is the standard ranking used by all FIDE Swiss pairing systems.
+ */
+function rankPlayers(players: Player[], games: Game[]): Player[] {
+  return [...players].toSorted((a, b) => {
+    const scoreDiff = score(b.id, games) - score(a.id, games);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+    return (b.rating ?? 0) - (a.rating ?? 0);
+  });
+}
+
+/**
+ * Returns the player who should receive a bye this round, or undefined if
+ * the player count is even. Prefers the lowest-ranked player who has not
+ * already received a bye.
+ */
+function assignBye(ranked: Player[], games: Game[]): Player | undefined {
+  if (ranked.length % 2 === 0) {
+    return undefined;
+  }
+  const eligible = ranked.filter((p) => byeScore(p.id, games) === 0);
+  return eligible.at(-1) ?? ranked.at(-1);
+}
+
 export {
   BYE_SENTINEL,
+  assignBye,
+  assignColors,
   byeScore,
   colorHistory,
   colorPreference,
   gamesForPlayer,
+  hasFaced,
+  rankPlayers,
   score,
   scoreGroups,
 };

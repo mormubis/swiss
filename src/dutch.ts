@@ -1,23 +1,17 @@
 import { blossom } from './blossom.js';
-import { byeScore, colorPreference, score } from './utilities.js';
+import {
+  assignBye,
+  assignColors,
+  colorPreference,
+  rankPlayers,
+  score,
+} from './utilities.js';
 
 import type { Game, PairingResult, Player } from './types.js';
 
 // Weight constants for the matching graph
 const CROSS_HALF_WEIGHT = 10_000;
 const COLOR_BONUS = 1;
-
-function assignColors(
-  a: Player,
-  b: Player,
-  games: Game[],
-): { blackId: string; whiteId: string } {
-  // positive colorPreference means player has played more black → prefers white
-  if (colorPreference(a.id, games) > 0) {
-    return { blackId: b.id, whiteId: a.id };
-  }
-  return { blackId: a.id, whiteId: b.id };
-}
 
 function dutch(players: Player[], games: Game[], round: number): PairingResult {
   if (round < 1) {
@@ -27,21 +21,8 @@ function dutch(players: Player[], games: Game[], round: number): PairingResult {
     throw new RangeError('at least 2 players are required');
   }
 
-  // Sort: highest score first, then highest rating as tiebreaker
-  const ranked = [...players].toSorted((a, b) => {
-    const scoreDiff = score(b.id, games) - score(a.id, games);
-    if (scoreDiff !== 0) {
-      return scoreDiff;
-    }
-    return (b.rating ?? 0) - (a.rating ?? 0);
-  });
-
-  // Assign bye to lowest-ranked player who has not yet had one
-  let byePlayer: Player | undefined;
-  if (ranked.length % 2 !== 0) {
-    const eligible = ranked.filter((p) => byeScore(p.id, games) === 0);
-    byePlayer = eligible.at(-1) ?? ranked.at(-1);
-  }
+  const ranked = rankPlayers(players, games);
+  const byePlayer = assignBye(ranked, games);
 
   const toBePaired = ranked.filter((p) => p.id !== byePlayer?.id);
   const n = toBePaired.length;
