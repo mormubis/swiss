@@ -202,3 +202,51 @@ describe('dutch fixture: issue_7', () => {
     'produces the exact FIDE-correct pairings for round 15 (requires full Dutch criteria impl)',
   );
 });
+
+// ---------------------------------------------------------------------------
+// issue_15
+//
+// 180-player tournament, 11 rounds completed. Whole-tournament pairability
+// smoke test (bbpPairings issue_15 regression). No expected pairings — just
+// verifies dutch() can pair all 11 rounds without crashing and produces no
+// rematches. XXR=12 means the tournament planned 12 rounds.
+// ---------------------------------------------------------------------------
+describe('dutch fixture: issue_15', () => {
+  const tournament = loadFixture('issue_15');
+  const allGames = toSwissGames(tournament);
+
+  for (let round = 1; round <= 11; round++) {
+    it(`pairs round ${round} without crashing (180 players)`, () => {
+      // Games played before this round
+      const gamesBefore = allGames.filter((g) => g.round < round);
+      const excluded = preAssignedIds(tournament, round);
+      const players = toSwissPlayers(tournament).filter(
+        (p) => !excluded.has(p.id),
+      );
+      const result = dutch(players, gamesBefore, round);
+      // 180 players, even count → 90 pairings, 0 byes
+      expect(result.pairings).toHaveLength(90);
+      expect(result.byes).toHaveLength(0);
+    });
+  }
+
+  it('produces no rematches in round 11', () => {
+    const gamesBefore = allGames.filter((g) => g.round < 11);
+    const excluded = preAssignedIds(tournament, 11);
+    const players = toSwissPlayers(tournament).filter(
+      (p) => !excluded.has(p.id),
+    );
+    const result = dutch(players, gamesBefore, 11);
+    for (const pairing of result.pairings) {
+      const alreadyFaced = gamesBefore.some(
+        (g) =>
+          (g.whiteId === pairing.whiteId && g.blackId === pairing.blackId) ||
+          (g.whiteId === pairing.blackId && g.blackId === pairing.whiteId),
+      );
+      expect(
+        alreadyFaced,
+        `rematch detected: ${pairing.whiteId} vs ${pairing.blackId}`,
+      ).toBe(false);
+    }
+  });
+});
