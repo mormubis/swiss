@@ -3,7 +3,7 @@
   "bugs": {
     "url": "https://github.com/mormubis/swiss/issues"
   },
-  "description": "Swiss tournament pairing and standings algorithms following FIDE rules.",
+  "description": "Swiss chess tournament pairings and standings following FIDE rules. Implements Dutch, Dubov, and Burstein systems with Buchholz, Sonneborn-Berger, and progressive tiebreaks. Zero dependencies.",
   "devDependencies": {
     "@echecs/trf": "file:../trf",
     "@eslint/js": "^10.0.1",
@@ -41,12 +41,21 @@
   ],
   "homepage": "https://github.com/mormubis/swiss#readme",
   "keywords": [
+    "buchholz",
+    "burstein",
     "chess",
+    "dubov",
     "dutch",
     "fide",
+    "no-dependencies",
     "pairing",
+    "pairings",
+    "sonneborn-berger",
+    "standings",
     "swiss",
-    "tournament"
+    "tiebreak",
+    "tournament",
+    "typescript"
   ],
   "license": "MIT",
   "main": "dist/index.js",
