@@ -11,7 +11,7 @@
  * implement all 21 FIDE Dutch criteria (C.04.3). These serve as the
  * specification for a future full FIDE Dutch implementation.
  */
-import parse from '@echecs/trf';
+import { parse } from '@echecs/trf';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

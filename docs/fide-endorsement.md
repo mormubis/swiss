@@ -20,6 +20,17 @@ Submit an **FE-1 form** to the SPPC secretariat:
 The application must be submitted **at least 4 months before** the FIDE Congress at which
 it will be reviewed.
 
+### Next FIDE Congress
+
+The **2025 Congress** took place online on **14 December 2025** (commissions met
+24–28 November 2025).
+
+The **2026 Congress** date has not been announced yet — the official page shows TBA:
+<https://congress.fide.com/general-assembly-2026/>
+
+Monitor that page for the announcement. Once the date is set, count back 4 months to
+determine your FE-1 submission deadline.
+
 ---
 
 ## Requirements
