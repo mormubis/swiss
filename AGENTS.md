@@ -22,7 +22,7 @@ tiebreak functions (`buchholz`, `buchholzCut`, `medianBuchholz`,
 ### Build
 
 ```bash
-pnpm run build          # compile TypeScript → dist/ (tsconfig.build.json)
+pnpm run build          # bundle TypeScript → dist/ via tsdown
 ```
 
 ### Test
