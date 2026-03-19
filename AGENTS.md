@@ -17,6 +17,19 @@ tiebreak functions (`buchholz`, `buchholzCut`, `medianBuchholz`,
 
 ---
 
+## Similar Libraries
+
+Use these to cross-check output when testing:
+
+- [`tournament-pairings`](https://www.npmjs.com/package/tournament-pairings) —
+  Swiss, round-robin, and elimination pairings for JavaScript.
+- [`tournament-organizer`](https://www.npmjs.com/package/tournament-organizer) —
+  JavaScript library for running tournaments with multiple formats.
+- [`swiss-tournament-calculator`](https://www.npmjs.com/package/swiss-tournament-calculator)
+  — FIDE-conformant Dutch Swiss pairing generator.
+
+---
+
 ## Commands
 
 ### Build
@@ -69,6 +82,7 @@ pnpm lint && pnpm test && pnpm build
 
 ## Architecture Notes
 
+- **ESM-only** — the package ships only ESM. Do not add a CJS build.
 - No runtime dependencies — keep it that way.
 - All shared internal logic (score, color history, bye eligibility, score
   groups) lives in `src/utilities.ts` and is NOT exported.
@@ -81,6 +95,15 @@ pnpm lint && pnpm test && pnpm build
 
 ---
 
+## Validation
+
+Input validation is mostly provided by TypeScript's strict type system at
+compile time. There is no runtime validation library — the type signatures
+enforce correct usage. Do not add runtime type-checking guards (e.g. `typeof`
+checks, assertion functions) unless there is an explicit trust boundary.
+
+---
+
 ## Error Handling
 
 - Throw `RangeError` for domain violations: `round < 1`, fewer than 2 players,
@@ -89,9 +112,67 @@ pnpm lint && pnpm test && pnpm build
 
 ---
 
-## Publishing
+## Release Protocol
 
-The package is published as `@echecs/swiss`. A GitHub Actions workflow publishes
-automatically when the `version` field in `package.json` is bumped on `main`. Do
-not manually publish. Always update `CHANGELOG.md` alongside any version bump.
-Bump patch for fixes, minor for new features, major for breaking changes.
+Step-by-step process for releasing a new version. CI auto-publishes to npm when
+`version` in `package.json` changes on `main`.
+
+1. **Verify the package is clean:**
+
+   ```bash
+   pnpm lint && pnpm test && pnpm build
+   ```
+
+   Do not proceed if any step fails.
+
+2. **Decide the semver level:**
+   - `patch` — bug fixes, internal refactors with no API change
+   - `minor` — new features, new exports, non-breaking additions
+   - `major` — breaking changes to the public API
+
+3. **Update `CHANGELOG.md`** following
+   [Keep a Changelog](https://keepachangelog.com) format:
+
+   ```markdown
+   ## [x.y.z] - YYYY-MM-DD
+
+   ### Added
+
+   - …
+
+   ### Changed
+
+   - …
+
+   ### Fixed
+
+   - …
+
+   ### Removed
+
+   - …
+   ```
+
+   Include only sections that apply. Use past tense.
+
+4. **Update `README.md`** if the release introduces new public API, changes
+   usage examples, or deprecates/removes existing features.
+
+5. **Bump the version:**
+
+   ```bash
+   npm version <major|minor|patch> --no-git-tag-version
+   ```
+
+6. **Commit and push:**
+
+   ```bash
+   git add package.json CHANGELOG.md README.md
+   git commit -m "release: @echecs/swiss@x.y.z"
+   git push
+   ```
+
+7. **CI takes over:** GitHub Actions detects the version bump, runs format →
+   lint → test, and publishes to npm.
+
+Do not manually publish with `npm publish`.
