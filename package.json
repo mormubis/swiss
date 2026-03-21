@@ -5,7 +5,7 @@
   },
   "description": "Swiss chess tournament pairings and standings following FIDE rules. Implements Dutch, Dubov, and Burstein systems with Buchholz, Sonneborn-Berger, and progressive tiebreaks. Zero dependencies.",
   "devDependencies": {
-    "@echecs/trf": "file:../trf",
+    "@echecs/trf": "^3.1.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.5.0",
     "@typescript-eslint/parser": "^8.57.0",
@@ -85,5 +85,5 @@
   },
   "type": "module",
   "types": "dist/index.d.ts",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

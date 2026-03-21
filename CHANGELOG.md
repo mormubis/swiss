@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — 2026-03-21
+
+### Fixed
+
+- Replaced local `file:` dependency on `@echecs/trf` with published npm version
+  to fix CI install failures
+
 ## 0.1.0 — 2026-03-17
 
 - Initial release

@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@echecs/trf':
-        specifier: file:../trf
-        version: file:../trf
+        specifier: ^3.1.1
+        version: 3.1.1
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.0.3)
@@ -110,8 +110,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@echecs/trf@file:../trf':
-    resolution: {directory: ../trf, type: directory}
+  '@echecs/trf@3.1.1':
+    resolution: {integrity: sha512-CRlMCMlHoi4w6U3q1Uz3Fi5ZJmMvJjSWicxV+F3mZXcJqzAscQcBmmDYTdiocqNdFXgjV+IOL83/IDThM3eZ9Q==}
     engines: {node: '>=20'}
 
   '@emnapi/core@1.9.0':
@@ -1561,7 +1561,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@echecs/trf@file:../trf': {}
+  '@echecs/trf@3.1.1': {}
 
   '@emnapi/core@1.9.0':
     dependencies:
