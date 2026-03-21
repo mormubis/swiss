@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 — 2026-03-22
+
+### Fixed
+
+- Copied TRF fixture files into the repo so CI tests no longer depend on the
+  monorepo sibling directory
+
 ## 0.1.1 — 2026-03-21
 
 ### Fixed

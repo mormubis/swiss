@@ -4,7 +4,7 @@
  * Test cases sourced from bbpPairings (Apache 2.0):
  * https://github.com/BieremaBoyzProgramming/bbpPairings/tree/main/test/tests
  *
- * Fixture files live in @echecs/trf — imported via the local file dependency.
+ * Fixture files live in src/__tests__/fixtures/ (copied from @echecs/trf).
  *
  * NOTE: Content-assertion tests are marked .todo because the current Dutch
  * implementation uses a simplified blossom-weighted approach that does not
@@ -96,16 +96,7 @@ function preAssignedIds(
 // Fixture loading
 // ---------------------------------------------------------------------------
 
-const FIXTURES_DIR = path.join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  'trf',
-  'src',
-  '__tests__',
-  'fixtures',
-);
+const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures');
 
 function loadFixture(name: string): Tournament {
   const content = readFileSync(path.join(FIXTURES_DIR, `${name}.trf`), 'utf8');
