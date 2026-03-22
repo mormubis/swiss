@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-03-22
+
+### Added
+
+- `doubleSwiss` pairing system (FIDE C.04.5 Double-Swiss)
+- `swissTeam` pairing system (FIDE C.04.6 Swiss Team)
+- `lim` pairing system (FIDE C.04.4.3 Lim System)
+- `matchCount` and `matchColorHistory` internal utilities for match-level
+  analysis
+- `typeAColorPreference` internal utility for team color preferences
+- Shared lexicographic pairing module used by `doubleSwiss` and `swissTeam`
+
 ## 0.1.2 — 2026-03-22
 
 ### Fixed
