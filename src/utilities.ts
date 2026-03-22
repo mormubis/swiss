@@ -54,6 +54,49 @@ function scoreGroups(players: Player[], games: Game[]): Map<number, Player[]> {
 }
 
 /**
+ * Returns the number of matches (unique rounds with a real opponent) played.
+ * Bye rounds are not counted.
+ */
+function matchCount(playerId: string, games: Game[]): number {
+  const rounds = new Set<number>();
+  for (const g of gamesForPlayer(playerId, games)) {
+    if (g.blackId !== BYE_SENTINEL) {
+      rounds.add(g.round);
+    }
+  }
+  return rounds.size;
+}
+
+/**
+ * Returns an array of colors representing the match-level color history.
+ * For each match (unique round with a real opponent), the color is determined
+ * by the first game in that round. Bye rounds are excluded. Sorted ascending
+ * by round.
+ */
+function matchColorHistory(playerId: string, games: Game[]): Color[] {
+  const realGames = gamesForPlayer(playerId, games).filter(
+    (g) => g.blackId !== BYE_SENTINEL,
+  );
+
+  const byRound = new Map<number, Game[]>();
+  for (const g of realGames) {
+    const group = byRound.get(g.round) ?? [];
+    group.push(g);
+    byRound.set(g.round, group);
+  }
+
+  return [...byRound.keys()]
+    .toSorted((a, b) => a - b)
+    .map((round) => {
+      const roundGames = byRound.get(round) ?? [];
+      const first = roundGames[0];
+      return first !== undefined && first.whiteId === playerId
+        ? 'white'
+        : 'black';
+    });
+}
+
+/**
  * Returns true if players a and b have faced each other in any previous game.
  */
 function hasFaced(a: string, b: string, games: Game[]): boolean {
@@ -115,6 +158,8 @@ export {
   colorPreference,
   gamesForPlayer,
   hasFaced,
+  matchColorHistory,
+  matchCount,
   rankPlayers,
   score,
   scoreGroups,

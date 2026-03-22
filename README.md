@@ -10,9 +10,9 @@ standings, following
 [FIDE rules](https://handbook.fide.com/chapter/C0401202507). Zero runtime
 dependencies.
 
-Three FIDE-approved pairing systems are supported: Dutch (C.04.3), Dubov
-(C.04.4.1), and Burstein (C.04.4.2). Six built-in tiebreak functions are
-included, all pluggable and composable.
+Four FIDE-approved pairing systems are supported: Dutch (C.04.3), Dubov
+(C.04.4.1), Burstein (C.04.4.2), and Double-Swiss (C.04.5). Six built-in
+tiebreak functions are included, all pluggable and composable.
 
 ## Installation
 
@@ -93,11 +93,12 @@ interface Bye {
 
 ### Pairing systems
 
-| Function   | FIDE rule | Description                                                           |
-| ---------- | --------- | --------------------------------------------------------------------- |
-| `dutch`    | C.04.3    | Default FIDE system — top half vs bottom half within each score group |
-| `dubov`    | C.04.4.1  | Adjacent pairing — rank 1 vs rank 2, rank 3 vs rank 4, etc.           |
-| `burstein` | C.04.4.2  | Rank 1 vs rank last, rank 2 vs rank second-to-last, etc.              |
+| Function      | FIDE rule | Description                                                           |
+| ------------- | --------- | --------------------------------------------------------------------- |
+| `dutch`       | C.04.3    | Default FIDE system — top half vs bottom half within each score group |
+| `dubov`       | C.04.4.1  | Adjacent pairing — rank 1 vs rank 2, rank 3 vs rank 4, etc.           |
+| `burstein`    | C.04.4.2  | Rank 1 vs rank last, rank 2 vs rank second-to-last, etc.              |
+| `doubleSwiss` | C.04.5    | Two-game match Swiss — each pairing is a two-game match               |
 
 ### `standings()`
 
@@ -154,6 +155,35 @@ const numberOfWins: Tiebreak = (playerId, _players, games) =>
   ).length;
 
 const table = standings(players, games, [numberOfWins]);
+```
+
+### Double-Swiss matches
+
+In Double-Swiss (`doubleSwiss`), each pairing is a two-game match. Record both
+games with the same `round` number:
+
+```typescript
+import { doubleSwiss } from '@echecs/swiss';
+
+const round1 = doubleSwiss(players, [], 1);
+// round1.pairings[0] = { whiteId: 'alice', blackId: 'bob' }
+
+// Record both games of the match
+const games: Game[] = [
+  { whiteId: 'alice', blackId: 'bob', result: 1, round: 1 }, // game 1
+  { whiteId: 'bob', blackId: 'alice', result: 0.5, round: 1 }, // game 2
+];
+// Alice scored 1 + 0.5 = 1.5 points for this match
+```
+
+A Double-Swiss bye awards 1.5 points (one win + one draw), recorded as two game
+entries with `blackId: ''`:
+
+```typescript
+const byeGames: Game[] = [
+  { whiteId: 'carol', blackId: '', result: 1, round: 1 },
+  { whiteId: 'carol', blackId: '', result: 0.5, round: 1 },
+];
 ```
 
 ### Byes
@@ -234,6 +264,7 @@ type Result = 0 | 0.5 | 1;
 - [C.04.3 Dutch system](https://handbook.fide.com/chapter/C0403202602)
 - [C.04.4.1 Dubov system](https://handbook.fide.com/chapter/C040401202602)
 - [C.04.4.2 Burstein system](https://handbook.fide.com/chapter/C040402202602)
+- [C.04.5 Double-Swiss system](https://handbook.fide.com/chapter/DoubleSwissSystem202602)
 
 ## License
 

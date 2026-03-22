@@ -22,6 +22,8 @@ export { burstein } from './burstein.js';
 
 export { dubov } from './dubov.js';
 
+export { doubleSwiss } from './double-swiss.js';
+
 export { dutch } from './dutch.js';
 
 export { standings } from './standings.js';
