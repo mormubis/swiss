@@ -26,4 +26,8 @@ export { doubleSwiss } from './double-swiss.js';
 
 export { dutch } from './dutch.js';
 
+export { lim } from './lim.js';
+
 export { standings } from './standings.js';
+
+export { swissTeam } from './swiss-team.js';

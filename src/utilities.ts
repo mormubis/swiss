@@ -149,6 +149,43 @@ function assignBye(ranked: Player[], games: Game[]): Player | undefined {
   return eligible.at(-1) ?? ranked.at(-1);
 }
 
+/**
+ * Type A color preference for Swiss Team (FIDE C.04.6 Article 1.7.1).
+ * Returns 'white' if the team prefers White, 'black' if Black, undefined if no preference.
+ */
+function typeAColorPreference(
+  playerId: string,
+  games: Game[],
+): Color | undefined {
+  const history = matchColorHistory(playerId, games);
+  const whites = history.filter((c) => c === 'white').length;
+  const blacks = history.filter((c) => c === 'black').length;
+  const cd = whites - blacks; // color difference
+
+  // Preference for White if CD < -1
+  if (cd < -1) {
+    return 'white';
+  }
+  // Preference for Black if CD > +1
+  if (cd > 1) {
+    return 'black';
+  }
+
+  const lastTwo = history.slice(-2);
+  if (lastTwo.length === 2) {
+    // CD is 0 or -1 and last two were Black → preference for White
+    if ((cd === 0 || cd === -1) && lastTwo.every((c) => c === 'black')) {
+      return 'white';
+    }
+    // CD is 0 or +1 and last two were White → preference for Black
+    if ((cd === 0 || cd === 1) && lastTwo.every((c) => c === 'white')) {
+      return 'black';
+    }
+  }
+
+  return undefined;
+}
+
 export {
   BYE_SENTINEL,
   assignBye,
@@ -163,6 +200,7 @@ export {
   rankPlayers,
   score,
   scoreGroups,
+  typeAColorPreference,
 };
 
 export type { Color };

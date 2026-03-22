@@ -10,9 +10,9 @@ TypeScript settings, formatting, naming, testing, ESLint rules).
 
 ## Project Overview
 
-Pure algorithm library, no runtime dependencies. Exports four pairing functions
-(`dutch`, `doubleSwiss`, `burstein`, `dubov`), one standings function
-(`standings`), and six tiebreak functions (`buchholz`, `buchholzCut`,
+Pure algorithm library, no runtime dependencies. Exports six pairing functions
+(`burstein`, `doubleSwiss`, `dubov`, `dutch`, `lim`, `swissTeam`), one standings
+function (`standings`), and six tiebreak functions (`buchholz`, `buchholzCut`,
 `medianBuchholz`, `sonnebornBerger`, `progressive`, `directEncounter`).
 
 ---
@@ -77,8 +77,11 @@ pnpm lint && pnpm test && pnpm build
 - C.04.3 Dutch system: https://handbook.fide.com/chapter/C0403202602
 - C.04.4.1 Dubov system: https://handbook.fide.com/chapter/C040401202602
 - C.04.4.2 Burstein system: https://handbook.fide.com/chapter/C040402202602
+- C.04.4.3 Lim system: https://handbook.fide.com/chapter/C040403202602
 - C.04.5 Double-Swiss system:
   https://handbook.fide.com/chapter/DoubleSwissSystem202602
+- C.04.6 Swiss Team system:
+  https://handbook.fide.com/chapter/SwissTeamPairingSystem202602
 
 ---
 

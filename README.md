@@ -10,9 +10,10 @@ standings, following
 [FIDE rules](https://handbook.fide.com/chapter/C0401202507). Zero runtime
 dependencies.
 
-Four FIDE-approved pairing systems are supported: Dutch (C.04.3), Dubov
-(C.04.4.1), Burstein (C.04.4.2), and Double-Swiss (C.04.5). Six built-in
-tiebreak functions are included, all pluggable and composable.
+Six FIDE-approved pairing systems are supported: Dutch (C.04.3), Dubov
+(C.04.4.1), Burstein (C.04.4.2), Lim (C.04.4.3), Double-Swiss (C.04.5), and
+Swiss Team (C.04.6). Six built-in tiebreak functions are included, all pluggable
+and composable.
 
 ## Installation
 
@@ -98,7 +99,9 @@ interface Bye {
 | `dutch`       | C.04.3    | Default FIDE system — top half vs bottom half within each score group |
 | `dubov`       | C.04.4.1  | Adjacent pairing — rank 1 vs rank 2, rank 3 vs rank 4, etc.           |
 | `burstein`    | C.04.4.2  | Rank 1 vs rank last, rank 2 vs rank second-to-last, etc.              |
+| `lim`         | C.04.4.3  | Lim system — bi-directional pairing with strict color rules           |
 | `doubleSwiss` | C.04.5    | Two-game match Swiss — each pairing is a two-game match               |
+| `swissTeam`   | C.04.6    | Team Swiss — teams as players, Type A color preferences               |
 
 ### `standings()`
 
@@ -264,7 +267,9 @@ type Result = 0 | 0.5 | 1;
 - [C.04.3 Dutch system](https://handbook.fide.com/chapter/C0403202602)
 - [C.04.4.1 Dubov system](https://handbook.fide.com/chapter/C040401202602)
 - [C.04.4.2 Burstein system](https://handbook.fide.com/chapter/C040402202602)
+- [C.04.4.3 Lim system](https://handbook.fide.com/chapter/C040403202602)
 - [C.04.5 Double-Swiss system](https://handbook.fide.com/chapter/DoubleSwissSystem202602)
+- [C.04.6 Swiss Team system](https://handbook.fide.com/chapter/SwissTeamPairingSystem202602)
 
 ## License
 
