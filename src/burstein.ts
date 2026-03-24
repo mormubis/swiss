@@ -2,14 +2,7 @@ import { assignBye, assignColors, hasFaced, rankPlayers } from './utilities.js';
 
 import type { Game, PairingResult, Player } from './types.js';
 
-function burstein(
-  players: Player[],
-  games: Game[],
-  round: number,
-): PairingResult {
-  if (round < 1) {
-    throw new RangeError('round must be >= 1');
-  }
+function pair(players: Player[], games: Game[][]): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
@@ -57,4 +50,4 @@ function burstein(
   };
 }
 
-export { burstein };
+export { pair };

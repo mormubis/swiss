@@ -10,25 +10,31 @@ describe('matchCount', () => {
   });
 
   it('counts each unique real-opponent round as one match', () => {
-    const games: Game[] = [
-      { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-      { blackId: 'A', result: 0, round: 1, whiteId: 'B' },
-      { blackId: 'A', result: 1, round: 2, whiteId: 'B' },
-      { blackId: 'B', result: 0, round: 2, whiteId: 'A' },
+    const games: Game[][] = [
+      [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'A', result: 0, whiteId: 'B' },
+      ],
+      [
+        { blackId: 'A', result: 1, whiteId: 'B' },
+        { blackId: 'B', result: 0, whiteId: 'A' },
+      ],
     ];
     expect(matchCount('A', games)).toBe(2);
   });
 
   it('does not count bye rounds', () => {
-    const games: Game[] = [{ blackId: '', result: 1, round: 1, whiteId: 'A' }];
+    const games: Game[][] = [[{ blackId: '', result: 1, whiteId: 'A' }]];
     expect(matchCount('A', games)).toBe(0);
   });
 
   it('does not count bye rounds even when mixed with real games', () => {
-    const games: Game[] = [
-      { blackId: '', result: 1, round: 1, whiteId: 'A' },
-      { blackId: 'B', result: 1, round: 2, whiteId: 'A' },
-      { blackId: 'A', result: 0, round: 2, whiteId: 'B' },
+    const games: Game[][] = [
+      [{ blackId: '', result: 1, whiteId: 'A' }],
+      [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'A', result: 0, whiteId: 'B' },
+      ],
     ];
     expect(matchCount('A', games)).toBe(1);
   });
@@ -40,13 +46,17 @@ describe('matchColorHistory', () => {
   });
 
   it('returns the color of the first game in each match round', () => {
-    const games: Game[] = [
-      // Round 1: A plays white first (game 1), then black (game 2) — first game determines color
-      { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-      { blackId: 'A', result: 0, round: 1, whiteId: 'B' },
-      // Round 2: A plays black first (lower whiteId is B), so color is black
-      { blackId: 'A', result: 1, round: 2, whiteId: 'B' },
-      { blackId: 'B', result: 0, round: 2, whiteId: 'A' },
+    // Round 1: A plays white first (game 1), then black (game 2) — first game determines color
+    // Round 2: A plays black first
+    const games: Game[][] = [
+      [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'A', result: 0, whiteId: 'B' },
+      ],
+      [
+        { blackId: 'A', result: 1, whiteId: 'B' },
+        { blackId: 'B', result: 0, whiteId: 'A' },
+      ],
     ];
     const result = matchColorHistory('A', games);
     expect(result).toHaveLength(2);
@@ -55,24 +65,32 @@ describe('matchColorHistory', () => {
   });
 
   it('skips bye rounds', () => {
-    const games: Game[] = [
-      { blackId: '', result: 1, round: 1, whiteId: 'A' },
-      { blackId: 'B', result: 1, round: 2, whiteId: 'A' },
-      { blackId: 'A', result: 0, round: 2, whiteId: 'B' },
+    const games: Game[][] = [
+      [{ blackId: '', result: 1, whiteId: 'A' }],
+      [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'A', result: 0, whiteId: 'B' },
+      ],
     ];
     const result = matchColorHistory('A', games);
     expect(result).toHaveLength(1);
     expect(result[0]).toBe('white');
   });
 
-  it('returns colors sorted by round ascending', () => {
-    const games: Game[] = [
-      { blackId: 'A', result: 1, round: 2, whiteId: 'B' },
-      { blackId: 'B', result: 0, round: 2, whiteId: 'A' },
-      { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-      { blackId: 'A', result: 0, round: 1, whiteId: 'B' },
+  it('returns colors ordered by round index', () => {
+    // Round 1 (index 0): A is white first game
+    // Round 2 (index 1): A is black first game
+    const games: Game[][] = [
+      [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'A', result: 0, whiteId: 'B' },
+      ],
+      [
+        { blackId: 'A', result: 1, whiteId: 'B' },
+        { blackId: 'B', result: 0, whiteId: 'A' },
+      ],
     ];
     const result = matchColorHistory('A', games);
-    expect(result).toEqual(['white', 'black']); // round 1: white, round 2: black
+    expect(result).toEqual(['white', 'black']); // round index 0: white, round index 1: black
   });
 });

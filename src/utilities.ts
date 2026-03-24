@@ -5,11 +5,13 @@ type Color = 'black' | 'white';
 /** Sentinel: empty string blackId signals a bye received by whiteId. */
 const BYE_SENTINEL = '';
 
-function gamesForPlayer(playerId: string, games: Game[]): Game[] {
-  return games.filter((g) => g.whiteId === playerId || g.blackId === playerId);
+function gamesForPlayer(playerId: string, games: Game[][]): Game[] {
+  return games
+    .flat()
+    .filter((g) => g.whiteId === playerId || g.blackId === playerId);
 }
 
-function score(playerId: string, games: Game[]): number {
+function score(playerId: string, games: Game[][]): number {
   let sum = 0;
   for (const g of gamesForPlayer(playerId, games)) {
     sum += g.whiteId === playerId ? g.result : 1 - g.result;
@@ -17,24 +19,37 @@ function score(playerId: string, games: Game[]): number {
   return sum;
 }
 
-function byeScore(playerId: string, games: Game[]): number {
+function byeScore(playerId: string, games: Game[][]): number {
   return gamesForPlayer(playerId, games).filter(
     (g) => g.whiteId === playerId && g.blackId === BYE_SENTINEL,
   ).length;
 }
 
-function colorHistory(playerId: string, games: Game[]): Color[] {
-  return gamesForPlayer(playerId, games)
-    .filter((g) => g.blackId !== BYE_SENTINEL)
-    .toSorted((a, b) => a.round - b.round)
-    .map((g) => (g.whiteId === playerId ? 'white' : 'black'));
+function colorHistory(playerId: string, games: Game[][]): Color[] {
+  const colors: Color[] = [];
+  for (const round of games) {
+    for (const g of round) {
+      if (g.blackId === BYE_SENTINEL) {
+        continue;
+      }
+      if (g.whiteId === playerId) {
+        colors.push('white');
+        break;
+      }
+      if (g.blackId === playerId) {
+        colors.push('black');
+        break;
+      }
+    }
+  }
+  return colors;
 }
 
 /**
  * Returns the color difference: positive means player has played more black
  * than white (prefers white next), negative means the opposite.
  */
-function colorPreference(playerId: string, games: Game[]): number {
+function colorPreference(playerId: string, games: Game[][]): number {
   let diff = 0;
   for (const color of colorHistory(playerId, games)) {
     diff += color === 'black' ? 1 : -1;
@@ -42,7 +57,10 @@ function colorPreference(playerId: string, games: Game[]): number {
   return diff;
 }
 
-function scoreGroups(players: Player[], games: Game[]): Map<number, Player[]> {
+function scoreGroups(
+  players: Player[],
+  games: Game[][],
+): Map<number, Player[]> {
   const groups = new Map<number, Player[]>();
   for (const player of players) {
     const s = score(player.id, games);
@@ -57,54 +75,58 @@ function scoreGroups(players: Player[], games: Game[]): Map<number, Player[]> {
  * Returns the number of matches (unique rounds with a real opponent) played.
  * Bye rounds are not counted.
  */
-function matchCount(playerId: string, games: Game[]): number {
-  const rounds = new Set<number>();
-  for (const g of gamesForPlayer(playerId, games)) {
-    if (g.blackId !== BYE_SENTINEL) {
-      rounds.add(g.round);
+function matchCount(playerId: string, games: Game[][]): number {
+  let count = 0;
+  for (const round of games) {
+    for (const g of round) {
+      if (g.blackId === BYE_SENTINEL) {
+        continue;
+      }
+      if (g.whiteId === playerId || g.blackId === playerId) {
+        count++;
+        break;
+      }
     }
   }
-  return rounds.size;
+  return count;
 }
 
 /**
  * Returns an array of colors representing the match-level color history.
  * For each match (unique round with a real opponent), the color is determined
- * by the first game in that round. Bye rounds are excluded. Sorted ascending
- * by round.
+ * by the first game in that round. Bye rounds are excluded.
  */
-function matchColorHistory(playerId: string, games: Game[]): Color[] {
-  const realGames = gamesForPlayer(playerId, games).filter(
-    (g) => g.blackId !== BYE_SENTINEL,
-  );
-
-  const byRound = new Map<number, Game[]>();
-  for (const g of realGames) {
-    const group = byRound.get(g.round) ?? [];
-    group.push(g);
-    byRound.set(g.round, group);
+function matchColorHistory(playerId: string, games: Game[][]): Color[] {
+  const colors: Color[] = [];
+  for (const round of games) {
+    for (const g of round) {
+      if (g.blackId === BYE_SENTINEL) {
+        continue;
+      }
+      if (g.whiteId === playerId) {
+        colors.push('white');
+        break;
+      }
+      if (g.blackId === playerId) {
+        colors.push('black');
+        break;
+      }
+    }
   }
-
-  return [...byRound.keys()]
-    .toSorted((a, b) => a - b)
-    .map((round) => {
-      const roundGames = byRound.get(round) ?? [];
-      const first = roundGames[0];
-      return first !== undefined && first.whiteId === playerId
-        ? 'white'
-        : 'black';
-    });
+  return colors;
 }
 
 /**
  * Returns true if players a and b have faced each other in any previous game.
  */
-function hasFaced(a: string, b: string, games: Game[]): boolean {
-  return games.some(
-    (g) =>
-      (g.whiteId === a && g.blackId === b) ||
-      (g.whiteId === b && g.blackId === a),
-  );
+function hasFaced(a: string, b: string, games: Game[][]): boolean {
+  return games
+    .flat()
+    .some(
+      (g) =>
+        (g.whiteId === a && g.blackId === b) ||
+        (g.whiteId === b && g.blackId === a),
+    );
 }
 
 /**
@@ -114,7 +136,7 @@ function hasFaced(a: string, b: string, games: Game[]): boolean {
 function assignColors(
   a: Player,
   b: Player,
-  games: Game[],
+  games: Game[][],
 ): { blackId: string; whiteId: string } {
   if (colorPreference(a.id, games) > 0) {
     return { blackId: b.id, whiteId: a.id };
@@ -126,7 +148,7 @@ function assignColors(
  * Returns players sorted by score descending, then rating descending.
  * This is the standard ranking used by all FIDE Swiss pairing systems.
  */
-function rankPlayers(players: Player[], games: Game[]): Player[] {
+function rankPlayers(players: Player[], games: Game[][]): Player[] {
   return [...players].toSorted((a, b) => {
     const scoreDiff = score(b.id, games) - score(a.id, games);
     if (scoreDiff !== 0) {
@@ -141,7 +163,7 @@ function rankPlayers(players: Player[], games: Game[]): Player[] {
  * the player count is even. Prefers the lowest-ranked player who has not
  * already received a bye.
  */
-function assignBye(ranked: Player[], games: Game[]): Player | undefined {
+function assignBye(ranked: Player[], games: Game[][]): Player | undefined {
   if (ranked.length % 2 === 0) {
     return undefined;
   }
@@ -155,7 +177,7 @@ function assignBye(ranked: Player[], games: Game[]): Player | undefined {
  */
 function typeAColorPreference(
   playerId: string,
-  games: Game[],
+  games: Game[][],
 ): Color | undefined {
   const history = matchColorHistory(playerId, games);
   const whites = history.filter((c) => c === 'white').length;

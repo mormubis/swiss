@@ -7,7 +7,6 @@ interface Bye {
 interface Game {
   blackId: string;
   result: Result;
-  round: number;
   whiteId: string;
 }
 
@@ -26,22 +25,4 @@ interface Player {
   rating?: number;
 }
 
-interface Standing {
-  playerId: string;
-  rank: number;
-  score: number;
-  tiebreaks: number[];
-}
-
-type Tiebreak = (playerId: string, players: Player[], games: Game[]) => number;
-
-export type {
-  Bye,
-  Game,
-  Pairing,
-  PairingResult,
-  Player,
-  Result,
-  Standing,
-  Tiebreak,
-};
+export type { Bye, Game, Pairing, PairingResult, Player, Result };

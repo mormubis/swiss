@@ -1,4 +1,4 @@
-export { pair } from './dutch.js';
+export { pair } from './lim.js';
 export type {
   Bye,
   Game,

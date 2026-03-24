@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { dutch } from '../dutch.js';
+import { pair } from '../dutch.js';
 
 import type { Game, Player } from '../types.js';
 import type { Tournament } from '@echecs/trf';
@@ -32,8 +32,20 @@ function toSwissPlayers(tournament: Tournament): Player[] {
   }));
 }
 
-function toSwissGames(tournament: Tournament): Game[] {
-  const games: Game[] = [];
+function toSwissGames(tournament: Tournament): Game[][] {
+  // Find max round
+  let maxRound = 0;
+  for (const player of tournament.players) {
+    for (const result of player.results) {
+      if (result.round > maxRound) {
+        maxRound = result.round;
+      }
+    }
+  }
+
+  // Build one array per round (1-indexed → 0-indexed)
+  const roundArrays: Game[][] = Array.from({ length: maxRound }, () => []);
+
   for (const player of tournament.players) {
     for (const result of player.results) {
       if (result.color !== 'w' || result.opponentId === null) {
@@ -44,33 +56,34 @@ function toSwissGames(tournament: Tournament): Game[] {
         case '1':
         case '+': {
           score = 1;
-
           break;
         }
         case '0':
         case '-': {
           score = 0;
-
           break;
         }
         case '=': {
           score = 0.5;
-
           break;
         }
         default: {
           continue;
         }
       }
-      games.push({
-        blackId: String(result.opponentId),
-        result: score,
-        round: result.round,
-        whiteId: String(player.pairingNumber),
-      });
+      const roundIndex = result.round - 1;
+      const roundGames = roundArrays[roundIndex];
+      if (roundGames !== undefined) {
+        roundGames.push({
+          blackId: String(result.opponentId),
+          result: score,
+          whiteId: String(player.pairingNumber),
+        });
+      }
     }
   }
-  return games;
+
+  return roundArrays;
 }
 
 /** IDs of players who have a pre-assigned Z or F bye in the target round. */
@@ -112,9 +125,12 @@ function loadFixture(name: string): Tournament {
 // ---------------------------------------------------------------------------
 describe('dutch fixture: dutch_2025_C5', () => {
   const tournament = loadFixture('dutch_2025_C5');
-  const excluded = preAssignedIds(tournament, 3);
+  const targetRound = 3;
+  const excluded = preAssignedIds(tournament, targetRound);
   const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
-  const games = toSwissGames(tournament);
+  // games up to (not including) round 3 → first 2 rounds
+  const allGames = toSwissGames(tournament);
+  const gamesBefore = allGames.slice(0, targetRound - 1);
 
   it('excludes pre-assigned players (P4 has Z-bye)', () => {
     expect(excluded.has('4')).toBe(true);
@@ -122,7 +138,7 @@ describe('dutch fixture: dutch_2025_C5', () => {
   });
 
   it('produces 2 pairings and 1 bye for round 3 (5 pairable players)', () => {
-    const result = dutch(players, games, 3);
+    const result = pair(players, gamesBefore);
     expect(result.pairings).toHaveLength(2);
     expect(result.byes).toHaveLength(1);
   });
@@ -137,9 +153,11 @@ describe('dutch fixture: dutch_2025_C5', () => {
 // ---------------------------------------------------------------------------
 describe('dutch fixture: dutch_2025_C9', () => {
   const tournament = loadFixture('dutch_2025_C9');
-  const excluded = preAssignedIds(tournament, 3);
+  const targetRound = 3;
+  const excluded = preAssignedIds(tournament, targetRound);
   const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
-  const games = toSwissGames(tournament);
+  const allGames = toSwissGames(tournament);
+  const gamesBefore = allGames.slice(0, targetRound - 1);
 
   it('has no pre-assigned players for round 3', () => {
     expect(excluded.size).toBe(0);
@@ -147,7 +165,7 @@ describe('dutch fixture: dutch_2025_C9', () => {
   });
 
   it('produces 2 pairings and 1 bye for round 3 (5 pairable players)', () => {
-    const result = dutch(players, games, 3);
+    const result = pair(players, gamesBefore);
     expect(result.pairings).toHaveLength(2);
     expect(result.byes).toHaveLength(1);
   });
@@ -162,25 +180,23 @@ describe('dutch fixture: dutch_2025_C9', () => {
 // ---------------------------------------------------------------------------
 describe('dutch fixture: issue_7', () => {
   const tournament = loadFixture('issue_7');
-  const excluded = preAssignedIds(tournament, 15);
+  const targetRound = 15;
+  const excluded = preAssignedIds(tournament, targetRound);
   const players = toSwissPlayers(tournament).filter((p) => !excluded.has(p.id));
-  const games = toSwissGames(tournament);
-
-  // Expected pairings (from bbpPairings output, for the .todo test below):
-  // 1-15, 3-2, 11-17, 7-10, 8-14, 4-6, 5-12, 9-16, 13-25, 24-22,
-  // 18-29, 20-23, 19-33, 21-38, 39-26, 28-36, 31-40, 37-35, 44-46, 30-32,
-  // 27-48, 47-42, 51-55, 34-50, 49-45, 53-58, 41-59, 56-43, 60-52, 54-57
+  const allGames = toSwissGames(tournament);
+  const gamesBefore = allGames.slice(0, targetRound - 1);
 
   it('produces 30 pairings and no byes for round 15', () => {
-    const result = dutch(players, games, 15);
+    const result = pair(players, gamesBefore);
     expect(result.pairings).toHaveLength(30);
     expect(result.byes).toHaveLength(0);
   });
 
   it('produces no rematches in round 15', () => {
-    const result = dutch(players, games, 15);
+    const result = pair(players, gamesBefore);
+    const flat = gamesBefore.flat();
     for (const pairing of result.pairings) {
-      const alreadyFaced = games.some(
+      const alreadyFaced = flat.some(
         (g) =>
           (g.whiteId === pairing.whiteId && g.blackId === pairing.blackId) ||
           (g.whiteId === pairing.blackId && g.blackId === pairing.whiteId),
@@ -202,7 +218,7 @@ describe('dutch fixture: issue_7', () => {
 //
 // 180-player tournament, 11 rounds completed. Whole-tournament pairability
 // smoke test (bbpPairings issue_15 regression). No expected pairings — just
-// verifies dutch() can pair all 11 rounds without crashing and produces no
+// verifies pair() can pair all 11 rounds without crashing and produces no
 // rematches. XXR=12 means the tournament planned 12 rounds.
 // ---------------------------------------------------------------------------
 describe('dutch fixture: issue_15', () => {
@@ -212,12 +228,12 @@ describe('dutch fixture: issue_15', () => {
   for (let round = 1; round <= 11; round++) {
     it(`pairs round ${round} without crashing (180 players)`, () => {
       // Games played before this round
-      const gamesBefore = allGames.filter((g) => g.round < round);
+      const gamesBefore = allGames.slice(0, round - 1);
       const excluded = preAssignedIds(tournament, round);
       const players = toSwissPlayers(tournament).filter(
         (p) => !excluded.has(p.id),
       );
-      const result = dutch(players, gamesBefore, round);
+      const result = pair(players, gamesBefore);
       // 180 players, even count → 90 pairings, 0 byes
       expect(result.pairings).toHaveLength(90);
       expect(result.byes).toHaveLength(0);
@@ -225,14 +241,15 @@ describe('dutch fixture: issue_15', () => {
   }
 
   it('produces no rematches in round 11', () => {
-    const gamesBefore = allGames.filter((g) => g.round < 11);
+    const gamesBefore = allGames.slice(0, 10);
     const excluded = preAssignedIds(tournament, 11);
     const players = toSwissPlayers(tournament).filter(
       (p) => !excluded.has(p.id),
     );
-    const result = dutch(players, gamesBefore, 11);
+    const result = pair(players, gamesBefore);
+    const flat = gamesBefore.flat();
     for (const pairing of result.pairings) {
-      const alreadyFaced = gamesBefore.some(
+      const alreadyFaced = flat.some(
         (g) =>
           (g.whiteId === pairing.whiteId && g.blackId === pairing.blackId) ||
           (g.whiteId === pairing.blackId && g.blackId === pairing.whiteId),

@@ -29,7 +29,7 @@ function medianScore(roundsPlayed: number): number {
 function isLimCompatible(
   a: Player,
   b: Player,
-  games: Game[],
+  games: Game[][],
   isLastRound: boolean,
 ): boolean {
   // Article 2.1.1: no rematches
@@ -115,7 +115,10 @@ function limPairingOrder(
  *
  * Returns an array of index pairs [topIndex, bottomIndex].
  */
-function findBestMatching(group: Player[], games: Game[]): [number, number][] {
+function findBestMatching(
+  group: Player[],
+  games: Game[][],
+): [number, number][] {
   const half = Math.floor(group.length / 2);
   if (half === 0) {
     return [];
@@ -159,7 +162,7 @@ function findBestMatching(group: Player[], games: Game[]): [number, number][] {
  */
 function tryFindMatching(
   group: Player[],
-  games: Game[],
+  games: Game[][],
   relaxColors: boolean,
 ): [number, number][] | undefined {
   const half = Math.floor(group.length / 2);
@@ -175,7 +178,7 @@ function tryFindMatching(
  */
 function backtrackMatch(
   group: Player[],
-  games: Game[],
+  games: Game[][],
   relaxColors: boolean,
   half: number,
   topIndex: number,
@@ -280,7 +283,7 @@ function selectFloater(
 function allocateLimColors(
   a: Player,
   b: Player,
-  games: Game[],
+  games: Game[][],
   ranked: Player[],
 ): { blackId: string; whiteId: string } {
   const histA = colorHistory(a.id, games);
@@ -360,7 +363,7 @@ function allocateLimColors(
  */
 function pairGroup(
   group: Player[],
-  games: Game[],
+  games: Game[][],
   ranked: Player[],
 ): { pairings: { blackId: string; whiteId: string }[]; unpaired: Player[] } {
   if (group.length < 2) {
@@ -416,10 +419,7 @@ function findNextScore(
 /**
  * Implements the Lim pairing system (FIDE C.04.4.3).
  */
-function lim(players: Player[], games: Game[], round: number): PairingResult {
-  if (round < 1) {
-    throw new RangeError('round must be >= 1');
-  }
+function pair(players: Player[], games: Game[][]): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
@@ -427,7 +427,7 @@ function lim(players: Player[], games: Game[], round: number): PairingResult {
   const ranked = rankPlayers(players, games);
   const byePlayer = assignBye(ranked, games);
   const toBePaired = ranked.filter((p) => p.id !== byePlayer?.id);
-  const roundsPlayed = round - 1;
+  const roundsPlayed = games.length;
 
   const allPairings: { blackId: string; whiteId: string }[] = [];
   const alreadyPaired = new Set<string>();
@@ -547,4 +547,4 @@ function lim(players: Player[], games: Game[], round: number): PairingResult {
   };
 }
 
-export { lim };
+export { pair };

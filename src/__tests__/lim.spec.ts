@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { lim } from '../lim.js';
+import { pair } from '../lim.js';
 
 import type { Game, Player } from '../types.js';
 
@@ -17,18 +17,14 @@ const FOUR_PLAYERS: Player[] = SIX_PLAYERS.slice(0, 4);
 
 describe('lim', () => {
   describe('validation', () => {
-    it('throws RangeError when round < 1', () => {
-      expect(() => lim(FOUR_PLAYERS, [], 0)).toThrow(RangeError);
-    });
-
     it('throws RangeError when fewer than 2 players', () => {
-      expect(() => lim([FOUR_PLAYERS[0]!], [], 1)).toThrow(RangeError);
+      expect(() => pair([FOUR_PLAYERS[0]!], [])).toThrow(RangeError);
     });
   });
 
   describe('round 1 — top half vs bottom half', () => {
     it('pairs 4 players: 1v3, 2v4', () => {
-      const result = lim(FOUR_PLAYERS, [], 1);
+      const result = pair(FOUR_PLAYERS, []);
       expect(result.pairings).toHaveLength(2);
       expect(result.byes).toHaveLength(0);
       const ids = result.pairings.map((p) =>
@@ -39,7 +35,7 @@ describe('lim', () => {
     });
 
     it('pairs 6 players: 1v4, 2v5, 3v6', () => {
-      const result = lim(SIX_PLAYERS, [], 1);
+      const result = pair(SIX_PLAYERS, []);
       expect(result.pairings).toHaveLength(3);
       expect(result.byes).toHaveLength(0);
       const ids = result.pairings.map((p) =>
@@ -53,7 +49,7 @@ describe('lim', () => {
 
   describe('odd player count — bye', () => {
     it('assigns a bye to the lowest-ranked player', () => {
-      const result = lim(FOUR_PLAYERS.slice(0, 3), [], 1);
+      const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
       expect(result.byes[0]?.playerId).toBe('C');
       expect(result.pairings).toHaveLength(1);
@@ -61,11 +57,11 @@ describe('lim', () => {
 
     it('does not give a bye to a player who already had one', () => {
       const threePlayers = FOUR_PLAYERS.slice(0, 3);
-      const games: Game[] = [
-        { blackId: '', result: 1, round: 1, whiteId: 'C' },
-        { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
+      const round1Games: Game[] = [
+        { blackId: '', result: 1, whiteId: 'C' },
+        { blackId: 'B', result: 1, whiteId: 'A' },
       ];
-      const result = lim(threePlayers, games, 2);
+      const result = pair(threePlayers, [round1Games]);
       expect(result.byes[0]?.playerId).not.toBe('C');
     });
   });
@@ -74,14 +70,13 @@ describe('lim', () => {
     it('exchanges to avoid rematch in scoregroup', () => {
       // A beat C in round 1; so A cannot face C again.
       // Default pairing in scoregroup {1pt}: A vs C — must exchange to A vs D or B vs C.
-      const games: Game[] = [
-        { blackId: 'C', result: 1, round: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, round: 1, whiteId: 'B' },
+      const round1Games: Game[] = [
+        { blackId: 'C', result: 1, whiteId: 'A' },
+        { blackId: 'D', result: 0, whiteId: 'B' },
       ];
-      // After round 1: A=1, B=0.5, D=0.5+0.5 wait — B=0 (lost), D=1 (won via result 0 from white's POV → black wins)
-      // Let's be explicit: A=1, B=0, C=0, D=1
+      // After round 1: A=1, B=0, C=0, D=1
       // scoregroup 1: A and D; scoregroup 0: B and C
-      const result = lim(FOUR_PLAYERS, games, 2);
+      const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
         [p.whiteId, p.blackId].toSorted().join('-'),
       );
@@ -93,21 +88,21 @@ describe('lim', () => {
     it('forces an exchange when top pairing is a rematch', () => {
       // All 4 players have 1 point but A already played C (the proposed pair 1v3)
       // (Making everyone have the same score so they're all in one group)
-      const games: Game[] = [
-        { blackId: 'C', result: 0.5, round: 1, whiteId: 'A' },
-        { blackId: 'B', result: 0.5, round: 1, whiteId: 'D' },
+      const round1Games: Game[] = [
+        { blackId: 'C', result: 0.5, whiteId: 'A' },
+        { blackId: 'B', result: 0.5, whiteId: 'D' },
       ];
       // All at 0.5 pts — one scoregroup
       // Proposed: A vs C (rematch!) and D vs B (rematch!)
       // Must exchange: try A vs B and C vs D (or A vs D and B vs C)
-      const result = lim(FOUR_PLAYERS, games, 2);
+      const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
         [p.whiteId, p.blackId].toSorted().join('-'),
       );
       // No rematches
-      for (const pair of pairs) {
-        const wasPlayed = games.some(
-          (g) => [g.whiteId, g.blackId].toSorted().join('-') === pair,
+      for (const pairKey of pairs) {
+        const wasPlayed = round1Games.some(
+          (g) => [g.whiteId, g.blackId].toSorted().join('-') === pairKey,
         );
         expect(wasPlayed).toBe(false);
       }
@@ -116,7 +111,7 @@ describe('lim', () => {
 
   describe('all players appear exactly once per round', () => {
     it('every player is paired or has a bye in round 1 (4 players)', () => {
-      const result = lim(FOUR_PLAYERS, [], 1);
+      const result = pair(FOUR_PLAYERS, []);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
         allIds.add(p.whiteId);
@@ -131,7 +126,7 @@ describe('lim', () => {
     });
 
     it('every player is paired or has a bye in round 1 (6 players)', () => {
-      const result = lim(SIX_PLAYERS, [], 1);
+      const result = pair(SIX_PLAYERS, []);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
         allIds.add(p.whiteId);
@@ -150,12 +145,12 @@ describe('lim', () => {
     it('gives White to player who played Black in the previous round', () => {
       // Round 1: A(w) vs B(b) → draw; C(w) vs D(b) → draw
       // All at 0.5 pts; B and D played black, A and C played white
-      const previousGames: Game[] = [
-        { blackId: 'B', result: 0.5, round: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0.5, round: 1, whiteId: 'C' },
+      const round1Games: Game[] = [
+        { blackId: 'B', result: 0.5, whiteId: 'A' },
+        { blackId: 'D', result: 0.5, whiteId: 'C' },
       ];
       // All at 0.5 pts — one scoregroup; B played black → should get white in round 2
-      const result = lim(FOUR_PLAYERS, previousGames, 2);
+      const result = pair(FOUR_PLAYERS, [round1Games]);
       const bPairing = result.pairings.find(
         (p) => p.whiteId === 'B' || p.blackId === 'B',
       );
@@ -169,13 +164,15 @@ describe('lim', () => {
       // Round 2: A(w) vs D(b) → A wins; B(w) vs C(b) → B wins
       // A: white, white → must get black in round 3
       // Scores: A=2, B=1, C=0, D=0
-      const twoRoundGames: Game[] = [
-        { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, round: 1, whiteId: 'C' },
-        { blackId: 'D', result: 1, round: 2, whiteId: 'A' },
-        { blackId: 'C', result: 1, round: 2, whiteId: 'B' },
+      const round1Games: Game[] = [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'D', result: 0, whiteId: 'C' },
       ];
-      const result = lim(FOUR_PLAYERS, twoRoundGames, 3);
+      const round2Games: Game[] = [
+        { blackId: 'D', result: 1, whiteId: 'A' },
+        { blackId: 'C', result: 1, whiteId: 'B' },
+      ];
+      const result = pair(FOUR_PLAYERS, [round1Games, round2Games]);
       const aPairing = result.pairings.find(
         (p) => p.whiteId === 'A' || p.blackId === 'A',
       );
@@ -189,13 +186,15 @@ describe('lim', () => {
       // Round 1: A(w) vs B(b) → A wins; C(w) vs D(b) → D wins
       // Round 2: A(w) vs D(b) → A wins; B(w) vs C(b) → B wins
       // A played white in rounds 1 and 2; in round 3, A must play black
-      const twoRoundGames: Game[] = [
-        { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, round: 1, whiteId: 'C' },
-        { blackId: 'D', result: 1, round: 2, whiteId: 'A' },
-        { blackId: 'C', result: 1, round: 2, whiteId: 'B' },
+      const round1Games: Game[] = [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'D', result: 0, whiteId: 'C' },
       ];
-      const result = lim(FOUR_PLAYERS, twoRoundGames, 3);
+      const round2Games: Game[] = [
+        { blackId: 'D', result: 1, whiteId: 'A' },
+        { blackId: 'C', result: 1, whiteId: 'B' },
+      ];
+      const result = pair(FOUR_PLAYERS, [round1Games, round2Games]);
       const aPairing = result.pairings.find(
         (p) => p.whiteId === 'A' || p.blackId === 'A',
       );
@@ -206,18 +205,19 @@ describe('lim', () => {
 
   describe('no rematches invariant', () => {
     it('never pairs the same two players twice across 2 rounds', () => {
-      const round1 = lim(FOUR_PLAYERS, [], 1);
-      const games: Game[] = round1.pairings.map((p) => ({
+      const round1Result = pair(FOUR_PLAYERS, []);
+      const round1Games: Game[] = round1Result.pairings.map((p) => ({
         blackId: p.blackId,
         result: 1 as const,
-        round: 1,
         whiteId: p.whiteId,
       }));
-      const round2 = lim(FOUR_PLAYERS, games, 2);
+      const round2Result = pair(FOUR_PLAYERS, [round1Games]);
       const round1Pairs = new Set(
-        round1.pairings.map((p) => [p.whiteId, p.blackId].toSorted().join('-')),
+        round1Result.pairings.map((p) =>
+          [p.whiteId, p.blackId].toSorted().join('-'),
+        ),
       );
-      for (const p of round2.pairings) {
+      for (const p of round2Result.pairings) {
         const key = [p.whiteId, p.blackId].toSorted().join('-');
         expect(round1Pairs.has(key)).toBe(false);
       }
@@ -226,19 +226,15 @@ describe('lim', () => {
 
   describe('bi-directional scoregroup order', () => {
     it('processes highest and lowest scoregroups before median', () => {
-      // After round 1: A=1, B=0.5, C=0.5, D=0, E=1, F=0 (with 6 players)
-      // scores: 1 → {A, E}, 0.5 → {B, C}, 0 → {D, F}; median = 0.5
-      // Order: score=1 first, score=0 second, score=0.5 (median) last
-      const games: Game[] = [
-        { blackId: 'D', result: 1, round: 1, whiteId: 'A' },
-        { blackId: 'E', result: 0.5, round: 1, whiteId: 'B' },
-        { blackId: 'F', result: 0.5, round: 1, whiteId: 'C' },
-      ];
-      // A=1, B=0.5, C=0.5, D=0, E=0.5, F=0.5
+      // After round 1: A=1, B=0.5, C=0.5, D=0, E=0.5, F=0.5
       // median = 0.5; order: 1 → 0 → 0.5
-      // score=1: A vs (only A)... that's odd, so A floats down
+      const round1Games: Game[] = [
+        { blackId: 'D', result: 1, whiteId: 'A' },
+        { blackId: 'E', result: 0.5, whiteId: 'B' },
+        { blackId: 'F', result: 0.5, whiteId: 'C' },
+      ];
       // This test just verifies the function runs without error and returns valid pairings
-      const result = lim(SIX_PLAYERS, games, 2);
+      const result = pair(SIX_PLAYERS, [round1Games]);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
         allIds.add(p.whiteId);
@@ -255,11 +251,11 @@ describe('lim', () => {
 
   describe('multi-round simulation', () => {
     it('pairs 6 players through 3 rounds with no rematches', () => {
-      let games: Game[] = [];
+      let games: Game[][] = [];
       const allPairings: [string, string][] = [];
 
       for (let round = 1; round <= 3; round++) {
-        const result = lim(SIX_PLAYERS, games, round);
+        const result = pair(SIX_PLAYERS, games);
         expect(result.pairings.length + result.byes.length).toBeGreaterThan(0);
 
         // Check no rematches
@@ -287,26 +283,27 @@ describe('lim', () => {
         expect(roundIds.size).toBe(SIX_PLAYERS.length);
 
         // Simulate results: white always wins
-        for (const p of result.pairings) {
-          games = [
-            ...games,
-            { blackId: p.blackId, result: 1, round, whiteId: p.whiteId },
-          ];
-        }
-        for (const b of result.byes) {
-          games = [
-            ...games,
-            { blackId: '', result: 1, round, whiteId: b.playerId },
-          ];
-        }
+        const roundGames: Game[] = [
+          ...result.pairings.map((p) => ({
+            blackId: p.blackId,
+            result: 1 as const,
+            whiteId: p.whiteId,
+          })),
+          ...result.byes.map((b) => ({
+            blackId: '',
+            result: 1 as const,
+            whiteId: b.playerId,
+          })),
+        ];
+        games = [...games, roundGames];
       }
     });
 
     it('pairs 4 players through 3 rounds with no rematches', () => {
-      let games: Game[] = [];
+      let games: Game[][] = [];
 
       for (let round = 1; round <= 3; round++) {
-        const result = lim(FOUR_PLAYERS, games, round);
+        const result = pair(FOUR_PLAYERS, games);
 
         // All players appear exactly once
         const roundIds = new Set<string>();
@@ -323,18 +320,19 @@ describe('lim', () => {
         expect(roundIds.size).toBe(FOUR_PLAYERS.length);
 
         // Simulate results: draw
-        for (const p of result.pairings) {
-          games = [
-            ...games,
-            { blackId: p.blackId, result: 0.5, round, whiteId: p.whiteId },
-          ];
-        }
-        for (const b of result.byes) {
-          games = [
-            ...games,
-            { blackId: '', result: 1, round, whiteId: b.playerId },
-          ];
-        }
+        const roundGames: Game[] = [
+          ...result.pairings.map((p) => ({
+            blackId: p.blackId,
+            result: 0.5 as const,
+            whiteId: p.whiteId,
+          })),
+          ...result.byes.map((b) => ({
+            blackId: '',
+            result: 1 as const,
+            whiteId: b.playerId,
+          })),
+        ];
+        games = [...games, roundGames];
       }
     });
   });

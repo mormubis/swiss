@@ -13,9 +13,9 @@ import type { Game, PairingResult, Player } from './types.js';
 const CROSS_HALF_WEIGHT = 10_000;
 const COLOR_BONUS = 1;
 
-function dutch(players: Player[], games: Game[], round: number): PairingResult {
-  if (round < 1) {
-    throw new RangeError('round must be >= 1');
+function pair(players: Player[], games: Game[][]): PairingResult {
+  if (games.length === 0 && players.length < 2) {
+    throw new RangeError('at least 2 players are required');
   }
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
@@ -60,11 +60,13 @@ function dutch(players: Player[], games: Game[], round: number): PairingResult {
       }
 
       // Forbidden: players who have already faced each other
-      const alreadyFaced = games.some(
-        (g) =>
-          (g.whiteId === a.id && g.blackId === b.id) ||
-          (g.whiteId === b.id && g.blackId === a.id),
-      );
+      const alreadyFaced = games
+        .flat()
+        .some(
+          (g) =>
+            (g.whiteId === a.id && g.blackId === b.id) ||
+            (g.whiteId === b.id && g.blackId === a.id),
+        );
       if (alreadyFaced) {
         continue;
       }
@@ -117,4 +119,4 @@ function dutch(players: Player[], games: Game[], round: number): PairingResult {
   };
 }
 
-export { dutch };
+export { pair };

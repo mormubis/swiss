@@ -20,12 +20,12 @@ function allocateDoubleColors(
   a: Player,
   b: Player,
   players: Player[],
-  games: Game[],
+  games: Game[][],
 ): { blackId: string; whiteId: string } {
   // Compute scores for a and b.
   let scoreA = 0;
   let scoreB = 0;
-  for (const g of games) {
+  for (const g of games.flat()) {
     if (g.whiteId === a.id) {
       scoreA += g.result;
     } else if (g.blackId === a.id) {
@@ -114,14 +114,7 @@ function allocateDoubleColors(
  * Each round is a two-game match between the same opponents.
  * PAB (bye) awards 1.5 points.
  */
-function doubleSwiss(
-  players: Player[],
-  games: Game[],
-  round: number,
-): PairingResult {
-  if (round < 1) {
-    throw new RangeError('round must be >= 1');
-  }
+function pair(players: Player[], games: Game[][]): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
@@ -143,4 +136,4 @@ function doubleSwiss(
   };
 }
 
-export { doubleSwiss };
+export { pair };

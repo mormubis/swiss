@@ -6,18 +6,18 @@ type ColorAllocator = (
   a: Player,
   b: Player,
   players: Player[],
-  games: Game[],
+  games: Game[][],
 ) => { blackId: string; whiteId: string };
 
 /**
  * Ranks players for lexicographic pairing (FIDE C.04.5 Article 1.2):
  * (1) score descending, (2) TPN ascending (original array index).
  */
-function rankByScoreThenTPN(players: Player[], games: Game[]): Player[] {
+function rankByScoreThenTPN(players: Player[], games: Game[][]): Player[] {
   const scoreMap = new Map<string, number>();
   for (const p of players) {
     let sum = 0;
-    for (const g of games) {
+    for (const g of games.flat()) {
       if (g.whiteId === p.id) {
         sum += g.result;
       } else if (g.blackId === p.id) {
@@ -49,7 +49,7 @@ function rankByScoreThenTPN(players: Player[], games: Game[]): Player[] {
 function assignLexicographicBye(
   players: Player[],
   ranked: Player[],
-  games: Game[],
+  games: Game[][],
 ): Player | undefined {
   if (ranked.length % 2 === 0) {
     return undefined;
@@ -63,7 +63,7 @@ function assignLexicographicBye(
   const scoreMap = new Map<string, number>();
   for (const p of candidates) {
     let sum = 0;
-    for (const g of games) {
+    for (const g of games.flat()) {
       if (g.whiteId === p.id) {
         sum += g.result;
       } else if (g.blackId === p.id) {
@@ -173,7 +173,7 @@ function allPerfectMatchings(sorted: Player[]): [Player, Player][][] {
 function pairBracket(
   bracket: Player[],
   players: Player[],
-  games: Game[],
+  games: Game[][],
   allocateColors: ColorAllocator,
 ): Pairing[] {
   // Sort bracket by TPN ascending (original array index).
@@ -215,7 +215,7 @@ function pairBracket(
 function pairAllBrackets(
   toBePaired: Player[],
   players: Player[],
-  games: Game[],
+  games: Game[][],
   allocateColors: ColorAllocator,
 ): Pairing[] {
   // Build score groups in descending score order.

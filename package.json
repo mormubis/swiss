@@ -32,6 +32,30 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./dutch": {
+      "import": "./dist/dutch-entry.js",
+      "types": "./dist/dutch-entry.d.ts"
+    },
+    "./dubov": {
+      "import": "./dist/dubov-entry.js",
+      "types": "./dist/dubov-entry.d.ts"
+    },
+    "./burstein": {
+      "import": "./dist/burstein-entry.js",
+      "types": "./dist/burstein-entry.d.ts"
+    },
+    "./lim": {
+      "import": "./dist/lim-entry.js",
+      "types": "./dist/lim-entry.d.ts"
+    },
+    "./double": {
+      "import": "./dist/double-entry.js",
+      "types": "./dist/double-entry.d.ts"
+    },
+    "./team": {
+      "import": "./dist/team-entry.js",
+      "types": "./dist/team-entry.d.ts"
     }
   },
   "files": [
@@ -62,7 +86,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "main": "dist/index.js",
   "name": "@echecs/swiss",
   "repository": {
     "type": "git",
@@ -84,6 +107,5 @@
     "test:watch": "pnpm run test --watch"
   },
   "type": "module",
-  "types": "dist/index.d.ts",
   "version": "0.2.0"
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dubov } from '../dubov.js';
+import { pair } from '../dubov.js';
 
 import type { Game, Player } from '../types.js';
 
@@ -14,7 +14,7 @@ const FOUR_PLAYERS: Player[] = [
 describe('dubov', () => {
   describe('round 1', () => {
     it('pairs adjacent ranks: 1 vs 2, 3 vs 4', () => {
-      const result = dubov(FOUR_PLAYERS, [], 1);
+      const result = pair(FOUR_PLAYERS, []);
       expect(result.pairings).toHaveLength(2);
       const ids = result.pairings.map((p) =>
         [p.whiteId, p.blackId].toSorted().join('-'),
@@ -24,7 +24,7 @@ describe('dubov', () => {
     });
 
     it('assigns a bye to the lowest-ranked odd player', () => {
-      const result = dubov(FOUR_PLAYERS.slice(0, 3), [], 1);
+      const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
       expect(result.byes[0]?.playerId).toBe('C');
     });
@@ -32,11 +32,11 @@ describe('dubov', () => {
 
   describe('invariants', () => {
     it('never pairs the same two players twice', () => {
-      const games: Game[] = [
-        { blackId: 'B', result: 1, round: 1, whiteId: 'A' },
-        { blackId: 'D', result: 1, round: 1, whiteId: 'C' },
+      const round1Games: Game[] = [
+        { blackId: 'B', result: 1, whiteId: 'A' },
+        { blackId: 'D', result: 1, whiteId: 'C' },
       ];
-      const result = dubov(FOUR_PLAYERS, games, 2);
+      const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
         [p.whiteId, p.blackId].toSorted().join('-'),
       );
@@ -46,12 +46,8 @@ describe('dubov', () => {
   });
 
   describe('validation', () => {
-    it('throws RangeError when round < 1', () => {
-      expect(() => dubov(FOUR_PLAYERS, [], 0)).toThrow(RangeError);
-    });
-
     it('throws RangeError when fewer than 2 players', () => {
-      expect(() => dubov([FOUR_PLAYERS[0]!], [], 1)).toThrow(RangeError);
+      expect(() => pair([FOUR_PLAYERS[0]!], [])).toThrow(RangeError);
     });
   });
 });
