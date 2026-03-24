@@ -5,15 +5,13 @@
 [![Coverage](https://codecov.io/gh/mormubis/swiss/branch/main/graph/badge.svg)](https://codecov.io/gh/mormubis/swiss)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Swiss** is a TypeScript library for Swiss chess tournament pairing and
-standings, following
+**Swiss** is a TypeScript library for Swiss chess tournament pairing, following
 [FIDE rules](https://handbook.fide.com/chapter/C0401202507). Zero runtime
 dependencies.
 
-Six FIDE-approved pairing systems are supported: Dutch (C.04.3), Dubov
-(C.04.4.1), Burstein (C.04.4.2), Lim (C.04.4.3), Double-Swiss (C.04.5), and
-Swiss Team (C.04.6). Six built-in tiebreak functions are included, all pluggable
-and composable.
+Six FIDE-approved pairing systems are supported via subpath exports: Dutch
+(C.04.3), Dubov (C.04.4.1), Burstein (C.04.4.2), Lim (C.04.4.3), Double-Swiss
+(C.04.5), and Swiss Team (C.04.6).
 
 ## Installation
 
@@ -24,7 +22,7 @@ npm install @echecs/swiss
 ## Quick Start
 
 ```typescript
-import { dutch, standings, buchholz, sonnebornBerger } from '@echecs/swiss';
+import { pair } from '@echecs/swiss'; // Dutch system (default)
 import type { Game, Player } from '@echecs/swiss';
 
 const players: Player[] = [
@@ -35,46 +33,39 @@ const players: Player[] = [
 ];
 
 // Pair round 1 (no games played yet)
-const round1 = dutch(players, [], 1);
+const round1 = pair(players, []);
 console.log(round1.pairings);
 // [{ whiteId: 'alice', blackId: 'carol' }, { whiteId: 'bob', blackId: 'dave' }]
 
-// Submit results
-const games: Game[] = [
-  { whiteId: 'alice', blackId: 'carol', result: 1, round: 1 },
-  { whiteId: 'bob', blackId: 'dave', result: 0.5, round: 1 },
+// Submit results — games[n] = round n+1, no `round` field on Game
+const games: Game[][] = [
+  [
+    { whiteId: 'alice', blackId: 'carol', result: 1 },
+    { whiteId: 'bob', blackId: 'dave', result: 0.5 },
+  ],
 ];
 
-// Pair round 2
-const round2 = dutch(players, games, 2);
-
-// Compute standings after round 1
-const table = standings(players, games, [buchholz, sonnebornBerger]);
-console.log(table[0]);
-// { playerId: 'alice', rank: 1, score: 1, tiebreaks: [1, 1] }
+// Pair round 2 — next round inferred from games.length + 1
+const round2 = pair(players, games);
 ```
 
 ## API
 
-### Pairing functions
+### `pair(players, games)`
 
-All three pairing systems share the same signature:
+All pairing systems export a single `pair` function:
 
 ```typescript
-function dutch(players: Player[], games: Game[], round: number): PairingResult;
-function dubov(players: Player[], games: Game[], round: number): PairingResult;
-function burstein(
-  players: Player[],
-  games: Game[],
-  round: number,
-): PairingResult;
+pair(players: Player[], games: Game[][]): PairingResult;
 ```
 
 - `players` — all registered players in the tournament
-- `games` — all completed games across all previous rounds
-- `round` — the round number to pair (1-based)
+- `games` — completed games grouped by round: `games[0]` = round 1, `games[1]` =
+  round 2, … The round to pair is `games.length + 1`
 
-Throws `RangeError` for `round < 1` or fewer than 2 players.
+The `Game` type has no `round` field — round is encoded by array position.
+
+Throws `RangeError` for fewer than 2 players or unknown player ids in games.
 
 ```typescript
 interface PairingResult {
@@ -92,122 +83,82 @@ interface Bye {
 }
 ```
 
-### Pairing systems
+### Subpath exports
 
-| Function      | FIDE rule | Description                                                           |
-| ------------- | --------- | --------------------------------------------------------------------- |
-| `dutch`       | C.04.3    | Default FIDE system — top half vs bottom half within each score group |
-| `dubov`       | C.04.4.1  | Adjacent pairing — rank 1 vs rank 2, rank 3 vs rank 4, etc.           |
-| `burstein`    | C.04.4.2  | Rank 1 vs rank last, rank 2 vs rank second-to-last, etc.              |
-| `lim`         | C.04.4.3  | Lim system — bi-directional pairing with strict color rules           |
-| `doubleSwiss` | C.04.5    | Two-game match Swiss — each pairing is a two-game match               |
-| `swissTeam`   | C.04.6    | Team Swiss — teams as players, Type A color preferences               |
-
-### `standings()`
+Each pairing system is available at its own subpath:
 
 ```typescript
-function standings(
-  players: Player[],
-  games: Game[],
-  tiebreaks: Tiebreak[],
-): Standing[];
+import { pair } from '@echecs/swiss'; // Dutch (default)
+import { pair } from '@echecs/swiss/dutch'; // Dutch (explicit)
+import { pair } from '@echecs/swiss/dubov'; // Dubov
+import { pair } from '@echecs/swiss/burstein'; // Burstein
+import { pair } from '@echecs/swiss/lim'; // Lim
+import { pair } from '@echecs/swiss/double'; // Double-Swiss
+import { pair } from '@echecs/swiss/team'; // Swiss Team
 ```
 
-Returns players ranked by score, with tiebreaks applied in the order supplied.
-Each `Standing` entry includes the computed tiebreak values in `tiebreaks[]`.
-
-```typescript
-interface Standing {
-  playerId: string;
-  rank: number;
-  score: number;
-  tiebreaks: number[]; // one value per tiebreak function, in order
-}
-```
-
-### Built-in tiebreaks
-
-All conform to the `Tiebreak` type and can be passed directly to `standings()`:
-
-```typescript
-type Tiebreak = (playerId: string, players: Player[], games: Game[]) => number;
-```
-
-| Function          | Description                                            |
-| ----------------- | ------------------------------------------------------ |
-| `buchholz`        | Sum of all opponents' final scores                     |
-| `buchholzCut`     | Buchholz minus the single lowest opponent score        |
-| `medianBuchholz`  | Buchholz minus both lowest and highest opponent scores |
-| `sonnebornBerger` | Sum of (result × opponent's score) for each game       |
-| `progressive`     | Sum of cumulative scores after each round              |
-| `directEncounter` | Score in games between tied players only               |
-
-### Custom tiebreaks
-
-Any function matching the `Tiebreak` signature works:
-
-```typescript
-import { standings } from '@echecs/swiss';
-import type { Game, Player, Tiebreak } from '@echecs/swiss';
-
-const numberOfWins: Tiebreak = (playerId, _players, games) =>
-  games.filter(
-    (g) =>
-      (g.whiteId === playerId && g.result === 1) ||
-      (g.blackId === playerId && g.result === 0),
-  ).length;
-
-const table = standings(players, games, [numberOfWins]);
-```
+| Import path              | FIDE rule | Description                                                 |
+| ------------------------ | --------- | ----------------------------------------------------------- |
+| `@echecs/swiss`          | C.04.3    | Default import — Dutch system                               |
+| `@echecs/swiss/dutch`    | C.04.3    | Top half vs bottom half within each score group             |
+| `@echecs/swiss/dubov`    | C.04.4.1  | Adjacent pairing — rank 1 vs rank 2, rank 3 vs rank 4, etc. |
+| `@echecs/swiss/burstein` | C.04.4.2  | Rank 1 vs rank last, rank 2 vs rank second-to-last, etc.    |
+| `@echecs/swiss/lim`      | C.04.4.3  | Bi-directional pairing with strict colour rules             |
+| `@echecs/swiss/double`   | C.04.5    | Two-game match Swiss                                        |
+| `@echecs/swiss/team`     | C.04.6    | Team Swiss — teams as players, Type A colour preferences    |
 
 ### Double-Swiss matches
 
-In Double-Swiss (`doubleSwiss`), each pairing is a two-game match. Record both
-games with the same `round` number:
+In Double-Swiss, each pairing is a two-game match. Both games appear in the same
+round slot:
 
 ```typescript
-import { doubleSwiss } from '@echecs/swiss';
+import { pair } from '@echecs/swiss/double';
 
-const round1 = doubleSwiss(players, [], 1);
+const round1 = pair(players, []);
 // round1.pairings[0] = { whiteId: 'alice', blackId: 'bob' }
 
-// Record both games of the match
-const games: Game[] = [
-  { whiteId: 'alice', blackId: 'bob', result: 1, round: 1 }, // game 1
-  { whiteId: 'bob', blackId: 'alice', result: 0.5, round: 1 }, // game 2
+// Record both games of the match in games[0] (round 1)
+const games: Game[][] = [
+  [
+    { whiteId: 'alice', blackId: 'bob', result: 1 }, // game 1
+    { whiteId: 'bob', blackId: 'alice', result: 0.5 }, // game 2
+  ],
 ];
 // Alice scored 1 + 0.5 = 1.5 points for this match
 ```
 
-A Double-Swiss bye awards 1.5 points (one win + one draw), recorded as two game
-entries with `blackId: ''`:
+A Double-Swiss bye awards 1.5 points (one win + one draw), recorded as two
+entries in the same round slot:
 
 ```typescript
-const byeGames: Game[] = [
-  { whiteId: 'carol', blackId: '', result: 1, round: 1 },
-  { whiteId: 'carol', blackId: '', result: 0.5, round: 1 },
+const games: Game[][] = [
+  [
+    { whiteId: 'carol', blackId: '', result: 1 },
+    { whiteId: 'carol', blackId: '', result: 0.5 },
+  ],
 ];
 ```
 
 ### Byes
 
 A bye is represented as a `Game` with `blackId: ''` (empty string). The player
-in `whiteId` receives the bye point. Pass it in `games` alongside real games:
+in `whiteId` receives the bye point:
 
 ```typescript
-const games: Game[] = [
-  { whiteId: 'alice', blackId: 'carol', result: 1, round: 1 },
-  { whiteId: 'bob', blackId: '', result: 1, round: 1 }, // bye for bob
+const games: Game[][] = [
+  [
+    { whiteId: 'alice', blackId: 'carol', result: 1 },
+    { whiteId: 'bob', blackId: '', result: 1 }, // bye for bob
+  ],
 ];
 ```
 
 ### Using with `@echecs/trf`
 
-To pair a tournament loaded from a TRF file, adapt the types:
-
 ```typescript
 import parse from '@echecs/trf';
-import { dutch } from '@echecs/swiss';
+import { pair } from '@echecs/swiss';
 import type { Tournament } from '@echecs/trf';
 import type { Game, Player } from '@echecs/swiss';
 
@@ -218,8 +169,8 @@ function toPlayers(t: Tournament): Player[] {
   }));
 }
 
-function toGames(t: Tournament): Game[] {
-  const games: Game[] = [];
+function toGames(t: Tournament): Game[][] {
+  const byRound: Game[][] = [];
   for (const player of t.players) {
     for (const r of player.results) {
       if (r.color !== 'w' || r.opponentId === null) continue;
@@ -228,19 +179,20 @@ function toGames(t: Tournament): Game[] {
       else if (r.result === '0' || r.result === '-') result = 0;
       else if (r.result === '=') result = 0.5;
       else continue;
-      games.push({
+      const idx = r.round - 1;
+      byRound[idx] ??= [];
+      byRound[idx].push({
         blackId: String(r.opponentId),
         result,
-        round: r.round,
         whiteId: String(player.pairingNumber),
       });
     }
   }
-  return games;
+  return byRound;
 }
 
 const tournament = parse(trfString)!;
-const pairings = dutch(toPlayers(tournament), toGames(tournament), 5);
+const pairings = pair(toPlayers(tournament), toGames(tournament));
 ```
 
 ## Types
@@ -254,8 +206,8 @@ interface Player {
 interface Game {
   blackId: string; // '' for a bye
   result: Result; // from white's perspective
-  round: number;
   whiteId: string;
+  // No `round` field — round is encoded by position in Game[][]
 }
 
 type Result = 0 | 0.5 | 1;

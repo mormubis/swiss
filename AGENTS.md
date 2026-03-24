@@ -10,10 +10,31 @@ TypeScript settings, formatting, naming, testing, ESLint rules).
 
 ## Project Overview
 
-Pure algorithm library, no runtime dependencies. Exports six pairing functions
-(`burstein`, `doubleSwiss`, `dubov`, `dutch`, `lim`, `swissTeam`), one standings
-function (`standings`), and six tiebreak functions (`buchholz`, `buchholzCut`,
-`medianBuchholz`, `sonnebornBerger`, `progressive`, `directEncounter`).
+Pure algorithm library, no runtime dependencies. Exports one `pair` function via
+six subpath imports — one per FIDE pairing system.
+
+### Subpath exports
+
+| Import path              | FIDE rule | Description                                                  |
+| ------------------------ | --------- | ------------------------------------------------------------ |
+| `@echecs/swiss`          | C.04.3    | Default import — Dutch system                                |
+| `@echecs/swiss/dutch`    | C.04.3    | Dutch system (top half vs bottom half within score groups)   |
+| `@echecs/swiss/dubov`    | C.04.4.1  | Dubov system (adjacent pairing)                              |
+| `@echecs/swiss/burstein` | C.04.4.2  | Burstein system (rank 1 vs rank last, etc.)                  |
+| `@echecs/swiss/lim`      | C.04.4.3  | Lim system (bi-directional pairing with strict colour rules) |
+| `@echecs/swiss/double`   | C.04.5    | Double-Swiss (two-game match Swiss)                          |
+| `@echecs/swiss/team`     | C.04.6    | Swiss Team (teams as players, Type A colour preferences)     |
+
+Each subpath exports a single `pair` function with the signature:
+
+```ts
+pair(players: Player[], games: Game[][]): PairingResult;
+```
+
+`Game[][]` is a round-indexed structure: `games[0]` contains round-1 games,
+`games[1]` contains round-2 games, and so on. The `Game` type no longer has a
+`round` field — round is determined by array position. There is no `round`
+parameter on `pair`; the next round number is inferred from `games.length + 1`.
 
 ---
 
@@ -95,6 +116,8 @@ pnpm lint && pnpm test && pnpm build
   All internal code filters these out appropriately.
 - The Dutch system uses a blossom (maximum weight matching) algorithm
   implemented in `src/blossom.ts` — also internal, not exported.
+- Round is structural: `games[n]` = round n+1. The `Game` type has no `round`
+  field. The next round to pair is `games.length + 1`.
 - All interface fields sorted alphabetically (`sort-keys` is an ESLint error).
 - Always use `.js` extensions on relative imports (NodeNext resolution).
 
@@ -111,8 +134,8 @@ checks, assertion functions) unless there is an explicit trust boundary.
 
 ## Error Handling
 
-- Throw `RangeError` for domain violations: `round < 1`, fewer than 2 players,
-  unknown player id in games.
+- Throw `RangeError` for domain violations: fewer than 2 players, unknown player
+  id in games.
 - Throw `TypeError` for wrong argument types.
 
 ---
