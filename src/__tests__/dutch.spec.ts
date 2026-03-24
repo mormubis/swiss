@@ -21,28 +21,28 @@ describe('dutch', () => {
       // Each pairing must cross the boundary
       const topHalf = new Set(['A', 'B']);
       for (const pairing of result.pairings) {
-        expect(
-          topHalf.has(pairing.whiteId) !== topHalf.has(pairing.blackId),
-        ).toBe(true);
+        expect(topHalf.has(pairing.white) !== topHalf.has(pairing.black)).toBe(
+          true,
+        );
       }
     });
 
     it('assigns bye to lowest-rated when odd count', () => {
       const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
     });
   });
 
   describe('invariants', () => {
     it('never pairs the same two players twice', () => {
       const round1Games: Game[] = [
-        { blackId: 'C', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 1, whiteId: 'B' },
+        { black: 'C', result: 1, white: 'A' },
+        { black: 'D', result: 1, white: 'B' },
       ];
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(pairs).not.toContain('A-C');
       expect(pairs).not.toContain('B-D');
@@ -50,7 +50,7 @@ describe('dutch', () => {
 
     it('produces a complete pairing (all players appear exactly once)', () => {
       const result = pair(FOUR_PLAYERS, []);
-      const allIds = result.pairings.flatMap((p) => [p.whiteId, p.blackId]);
+      const allIds = result.pairings.flatMap((p) => [p.white, p.black]);
       expect(new Set(allIds).size).toBe(4);
       expect(allIds).toHaveLength(4);
     });

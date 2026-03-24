@@ -1,18 +1,18 @@
 type Result = 0 | 0.5 | 1;
 
 interface Bye {
-  playerId: string;
+  player: string;
 }
 
 interface Game {
-  blackId: string;
+  black: string;
   result: Result;
-  whiteId: string;
+  white: string;
 }
 
 interface Pairing {
-  blackId: string;
-  whiteId: string;
+  black: string;
+  white: string;
 }
 
 interface PairingResult {

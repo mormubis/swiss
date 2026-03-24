@@ -18,7 +18,7 @@ describe('burstein', () => {
       expect(result.pairings).toHaveLength(2);
       expect(result.byes).toHaveLength(0);
       const ids = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(ids).toContain('A-D');
       expect(ids).toContain('B-C');
@@ -27,19 +27,19 @@ describe('burstein', () => {
     it('assigns a bye to the lowest-rated player when odd count', () => {
       const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
     });
   });
 
   describe('invariants', () => {
     it('never pairs the same two players twice', () => {
       const round1Games: Game[] = [
-        { blackId: 'D', result: 1, whiteId: 'A' },
-        { blackId: 'C', result: 1, whiteId: 'B' },
+        { black: 'D', result: 1, white: 'A' },
+        { black: 'C', result: 1, white: 'B' },
       ];
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(pairs).not.toContain('A-D');
       expect(pairs).not.toContain('B-C');
@@ -48,11 +48,11 @@ describe('burstein', () => {
     it('does not give a bye to a player who already had one', () => {
       const threePlayers = FOUR_PLAYERS.slice(0, 3);
       const round1Games: Game[] = [
-        { blackId: '', result: 1, whiteId: 'C' },
-        { blackId: 'B', result: 1, whiteId: 'A' },
+        { black: '', result: 1, white: 'C' },
+        { black: 'B', result: 1, white: 'A' },
       ];
       const result = pair(threePlayers, [round1Games]);
-      expect(result.byes[0]?.playerId).not.toBe('C');
+      expect(result.byes[0]?.player).not.toBe('C');
     });
   });
 

@@ -17,7 +17,7 @@ describe('dubov', () => {
       const result = pair(FOUR_PLAYERS, []);
       expect(result.pairings).toHaveLength(2);
       const ids = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(ids).toContain('A-B');
       expect(ids).toContain('C-D');
@@ -26,19 +26,19 @@ describe('dubov', () => {
     it('assigns a bye to the lowest-ranked odd player', () => {
       const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
     });
   });
 
   describe('invariants', () => {
     it('never pairs the same two players twice', () => {
       const round1Games: Game[] = [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 1, whiteId: 'C' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'D', result: 1, white: 'C' },
       ];
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(pairs).not.toContain('A-B');
       expect(pairs).not.toContain('C-D');

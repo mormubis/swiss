@@ -107,5 +107,5 @@
     "test:watch": "pnpm run test --watch"
   },
   "type": "module",
-  "version": "1.0.0"
+  "version": "2.0.0"
 }

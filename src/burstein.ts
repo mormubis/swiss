@@ -45,7 +45,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   }
 
   return {
-    byes: byePlayer === undefined ? [] : [{ playerId: byePlayer.id }],
+    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
     pairings,
   };
 }

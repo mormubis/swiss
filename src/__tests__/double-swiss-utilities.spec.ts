@@ -12,28 +12,28 @@ describe('matchCount', () => {
   it('counts each unique real-opponent round as one match', () => {
     const games: Game[][] = [
       [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'A', result: 0, whiteId: 'B' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'A', result: 0, white: 'B' },
       ],
       [
-        { blackId: 'A', result: 1, whiteId: 'B' },
-        { blackId: 'B', result: 0, whiteId: 'A' },
+        { black: 'A', result: 1, white: 'B' },
+        { black: 'B', result: 0, white: 'A' },
       ],
     ];
     expect(matchCount('A', games)).toBe(2);
   });
 
   it('does not count bye rounds', () => {
-    const games: Game[][] = [[{ blackId: '', result: 1, whiteId: 'A' }]];
+    const games: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
     expect(matchCount('A', games)).toBe(0);
   });
 
   it('does not count bye rounds even when mixed with real games', () => {
     const games: Game[][] = [
-      [{ blackId: '', result: 1, whiteId: 'A' }],
+      [{ black: '', result: 1, white: 'A' }],
       [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'A', result: 0, whiteId: 'B' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'A', result: 0, white: 'B' },
       ],
     ];
     expect(matchCount('A', games)).toBe(1);
@@ -50,12 +50,12 @@ describe('matchColorHistory', () => {
     // Round 2: A plays black first
     const games: Game[][] = [
       [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'A', result: 0, whiteId: 'B' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'A', result: 0, white: 'B' },
       ],
       [
-        { blackId: 'A', result: 1, whiteId: 'B' },
-        { blackId: 'B', result: 0, whiteId: 'A' },
+        { black: 'A', result: 1, white: 'B' },
+        { black: 'B', result: 0, white: 'A' },
       ],
     ];
     const result = matchColorHistory('A', games);
@@ -66,10 +66,10 @@ describe('matchColorHistory', () => {
 
   it('skips bye rounds', () => {
     const games: Game[][] = [
-      [{ blackId: '', result: 1, whiteId: 'A' }],
+      [{ black: '', result: 1, white: 'A' }],
       [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'A', result: 0, whiteId: 'B' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'A', result: 0, white: 'B' },
       ],
     ];
     const result = matchColorHistory('A', games);
@@ -82,12 +82,12 @@ describe('matchColorHistory', () => {
     // Round 2 (index 1): A is black first game
     const games: Game[][] = [
       [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'A', result: 0, whiteId: 'B' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'A', result: 0, white: 'B' },
       ],
       [
-        { blackId: 'A', result: 1, whiteId: 'B' },
-        { blackId: 'B', result: 0, whiteId: 'A' },
+        { black: 'A', result: 1, white: 'B' },
+        { black: 'B', result: 0, white: 'A' },
       ],
     ];
     const result = matchColorHistory('A', games);

@@ -75,9 +75,9 @@ function toSwissGames(tournament: Tournament): Game[][] {
       const roundGames = roundArrays[roundIndex];
       if (roundGames !== undefined) {
         roundGames.push({
-          blackId: String(result.opponentId),
+          black: String(result.opponentId),
           result: score,
-          whiteId: String(player.pairingNumber),
+          white: String(player.pairingNumber),
         });
       }
     }
@@ -198,12 +198,12 @@ describe('dutch fixture: issue_7', () => {
     for (const pairing of result.pairings) {
       const alreadyFaced = flat.some(
         (g) =>
-          (g.whiteId === pairing.whiteId && g.blackId === pairing.blackId) ||
-          (g.whiteId === pairing.blackId && g.blackId === pairing.whiteId),
+          (g.white === pairing.white && g.black === pairing.black) ||
+          (g.white === pairing.black && g.black === pairing.white),
       );
       expect(
         alreadyFaced,
-        `rematch detected: ${pairing.whiteId} vs ${pairing.blackId}`,
+        `rematch detected: ${pairing.white} vs ${pairing.black}`,
       ).toBe(false);
     }
   });
@@ -251,12 +251,12 @@ describe('dutch fixture: issue_15', () => {
     for (const pairing of result.pairings) {
       const alreadyFaced = flat.some(
         (g) =>
-          (g.whiteId === pairing.whiteId && g.blackId === pairing.blackId) ||
-          (g.whiteId === pairing.blackId && g.blackId === pairing.whiteId),
+          (g.white === pairing.white && g.black === pairing.black) ||
+          (g.white === pairing.black && g.black === pairing.white),
       );
       expect(
         alreadyFaced,
-        `rematch detected: ${pairing.whiteId} vs ${pairing.blackId}`,
+        `rematch detected: ${pairing.white} vs ${pairing.black}`,
       ).toBe(false);
     }
   });

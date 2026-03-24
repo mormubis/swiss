@@ -21,19 +21,19 @@ function allocateTeamColors(
   b: Player,
   players: Player[],
   games: Game[][],
-): { blackId: string; whiteId: string } {
+): { black: string; white: string } {
   // Compute scores for a and b.
   let scoreA = 0;
   let scoreB = 0;
   for (const g of games.flat()) {
-    if (g.whiteId === a.id) {
+    if (g.white === a.id) {
       scoreA += g.result;
-    } else if (g.blackId === a.id) {
+    } else if (g.black === a.id) {
       scoreA += 1 - g.result;
     }
-    if (g.whiteId === b.id) {
+    if (g.white === b.id) {
       scoreB += g.result;
-    } else if (g.blackId === b.id) {
+    } else if (g.black === b.id) {
       scoreB += 1 - g.result;
     }
   }
@@ -49,14 +49,14 @@ function allocateTeamColors(
   const otherHistory = matchColorHistory(other.id, games);
 
   // Helper: give first-team White.
-  const firstWhite = (): { blackId: string; whiteId: string } => ({
-    blackId: other.id,
-    whiteId: first.id,
+  const firstWhite = (): { black: string; white: string } => ({
+    black: other.id,
+    white: first.id,
   });
   // Helper: give first-team Black.
-  const firstBlack = (): { blackId: string; whiteId: string } => ({
-    blackId: first.id,
-    whiteId: other.id,
+  const firstBlack = (): { black: string; white: string } => ({
+    black: first.id,
+    white: other.id,
   });
 
   // 4.3.1 — Both have zero match history.
@@ -162,7 +162,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   );
 
   return {
-    byes: byePlayer === undefined ? [] : [{ playerId: byePlayer.id }],
+    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
     pairings,
   };
 }

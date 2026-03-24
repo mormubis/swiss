@@ -11,9 +11,7 @@ function hasPair(
   b: string,
 ): boolean {
   return pairings.some(
-    (p) =>
-      (p.whiteId === a && p.blackId === b) ||
-      (p.whiteId === b && p.blackId === a),
+    (p) => (p.white === a && p.black === b) || (p.white === b && p.black === a),
   );
 }
 
@@ -50,7 +48,7 @@ describe('swissTeam', () => {
 
     it('each team appears exactly once across all pairings', () => {
       const result = pair(FOUR_TEAMS, []);
-      const allIds = result.pairings.flatMap((p) => [p.whiteId, p.blackId]);
+      const allIds = result.pairings.flatMap((p) => [p.white, p.black]);
       expect(new Set(allIds).size).toBe(4);
       expect(allIds).toHaveLength(4);
     });
@@ -64,7 +62,7 @@ describe('swissTeam', () => {
 
     it('assigns bye to team with largest TPN when all score is tied', () => {
       const result = pair(THREE_TEAMS, []);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
     });
   });
 
@@ -79,11 +77,11 @@ describe('swissTeam', () => {
       ];
       // A, B, C, D all scored 1 from draws; E has score 0
       const round1Games: Game[] = [
-        { blackId: 'B', result: 0.5, whiteId: 'A' },
-        { blackId: 'D', result: 0.5, whiteId: 'C' },
+        { black: 'B', result: 0.5, white: 'A' },
+        { black: 'D', result: 0.5, white: 'C' },
       ];
       const result = pair(fiveTeams, [round1Games]);
-      expect(result.byes[0]?.playerId).toBe('E');
+      expect(result.byes[0]?.player).toBe('E');
     });
 
     it('prefers team with most matches played when scores tie (lowest score)', () => {
@@ -96,23 +94,23 @@ describe('swissTeam', () => {
         { id: 'E', rating: 1600 },
       ];
       const round1Games: Game[] = [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0.5, whiteId: 'C' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'D', result: 0.5, white: 'C' },
       ];
       const result = pair(fiveTeams, [round1Games]);
-      expect(result.byes[0]?.playerId).toBe('B');
+      expect(result.byes[0]?.player).toBe('B');
     });
 
     it('prefers largest TPN among tied lowest-score same-matches teams', () => {
       // 3 teams all score 0, no games. C has largest TPN → C gets bye
       const result = pair(THREE_TEAMS, []);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
     });
 
     it('does not assign bye to team that already received one (C2 rule)', () => {
-      const round1Games: Game[] = [{ blackId: '', result: 1, whiteId: 'C' }];
+      const round1Games: Game[] = [{ black: '', result: 1, white: 'C' }];
       const result = pair(THREE_TEAMS, [round1Games]);
-      expect(result.byes[0]?.playerId).not.toBe('C');
+      expect(result.byes[0]?.player).not.toBe('C');
     });
   });
 
@@ -125,8 +123,8 @@ describe('swissTeam', () => {
       const result = pair(players, []);
       const pairing = result.pairings[0];
       expect(pairing).toBeDefined();
-      expect(pairing!.whiteId).toBe('A');
-      expect(pairing!.blackId).toBe('B');
+      expect(pairing!.white).toBe('A');
+      expect(pairing!.black).toBe('B');
     });
 
     it('round 1: first-team with even 1-based TPN gets Black', () => {
@@ -136,14 +134,14 @@ describe('swissTeam', () => {
       ];
       const round1Games: Game[] = [
         // B received a bye in round 1 — gives score but no match color history
-        { blackId: '', result: 1, whiteId: 'B' },
+        { black: '', result: 1, white: 'B' },
       ];
       const result = pair(players, [round1Games]);
       const pairing = result.pairings[0];
       expect(pairing).toBeDefined();
       // B is first-team with even 1-based TPN (2) → B gets Black → A gets White
-      expect(pairing!.whiteId).toBe('A');
-      expect(pairing!.blackId).toBe('B');
+      expect(pairing!.white).toBe('A');
+      expect(pairing!.black).toBe('B');
     });
   });
 
@@ -155,14 +153,14 @@ describe('swissTeam', () => {
         { id: 'B', rating: 1900 },
       ];
       const games: Game[][] = [
-        [{ blackId: 'A', result: 0.5, whiteId: 'X' }],
-        [{ blackId: 'A', result: 0.5, whiteId: 'X' }],
-        [{ blackId: 'A', result: 0.5, whiteId: 'X' }],
+        [{ black: 'A', result: 0.5, white: 'X' }],
+        [{ black: 'A', result: 0.5, white: 'X' }],
+        [{ black: 'A', result: 0.5, white: 'X' }],
       ];
       const result = pair(players, games);
       const pairing = result.pairings[0];
       expect(pairing).toBeDefined();
-      expect(pairing!.whiteId).toBe('A');
+      expect(pairing!.white).toBe('A');
     });
 
     it('grants opposing preference when both have Type A preference for opposite colors', () => {
@@ -173,23 +171,23 @@ describe('swissTeam', () => {
       ];
       const games: Game[][] = [
         [
-          { blackId: 'A', result: 0.5, whiteId: 'X' },
-          { blackId: 'X', result: 0.5, whiteId: 'B' },
+          { black: 'A', result: 0.5, white: 'X' },
+          { black: 'X', result: 0.5, white: 'B' },
         ],
         [
-          { blackId: 'A', result: 0.5, whiteId: 'X' },
-          { blackId: 'X', result: 0.5, whiteId: 'B' },
+          { black: 'A', result: 0.5, white: 'X' },
+          { black: 'X', result: 0.5, white: 'B' },
         ],
         [
-          { blackId: 'A', result: 0.5, whiteId: 'X' },
-          { blackId: 'X', result: 0.5, whiteId: 'B' },
+          { black: 'A', result: 0.5, white: 'X' },
+          { black: 'X', result: 0.5, white: 'B' },
         ],
       ];
       const result = pair(players, games);
       const pairing = result.pairings[0];
       expect(pairing).toBeDefined();
-      expect(pairing!.whiteId).toBe('A');
-      expect(pairing!.blackId).toBe('B');
+      expect(pairing!.white).toBe('A');
+      expect(pairing!.black).toBe('B');
     });
   });
 
@@ -204,19 +202,19 @@ describe('swissTeam', () => {
       // B: white r1, white r2, black r3 → CD=1, last two=[white,black]
       const games: Game[][] = [
         [
-          { blackId: 'X', result: 0.5, whiteId: 'A' },
-          { blackId: 'X', result: 0.5, whiteId: 'B' },
+          { black: 'X', result: 0.5, white: 'A' },
+          { black: 'X', result: 0.5, white: 'B' },
         ],
         [
-          { blackId: 'A', result: 0.5, whiteId: 'X' },
-          { blackId: 'X', result: 0.5, whiteId: 'B' },
+          { black: 'A', result: 0.5, white: 'X' },
+          { black: 'X', result: 0.5, white: 'B' },
         ],
-        [{ blackId: 'B', result: 0.5, whiteId: 'X' }],
+        [{ black: 'B', result: 0.5, white: 'X' }],
       ];
       const result = pair(players, games);
       const pairing = result.pairings[0];
       expect(pairing).toBeDefined();
-      expect(pairing!.whiteId).toBe('A');
+      expect(pairing!.white).toBe('A');
     });
   });
 
@@ -232,24 +230,24 @@ describe('swissTeam', () => {
       ];
       const round1Games: Game[] = [
         // Round 1: A(white) vs C, B(white) vs D
-        { blackId: 'C', result: 0.5, whiteId: 'A' },
-        { blackId: 'D', result: 0.5, whiteId: 'B' },
+        { black: 'C', result: 0.5, white: 'A' },
+        { black: 'D', result: 0.5, white: 'B' },
       ];
       const round2Games: Game[] = [
         // Round 2: A(black) vs D, B(black) vs C
-        { blackId: 'A', result: 0.5, whiteId: 'D' },
-        { blackId: 'B', result: 0.5, whiteId: 'C' },
+        { black: 'A', result: 0.5, white: 'D' },
+        { black: 'B', result: 0.5, white: 'C' },
       ];
       // Round 3: A hasn't faced B → can be paired
       // 4.3.8: alternate first-team(A) from last round: last=black → A gets White
       const result = pair(players, [round1Games, round2Games]);
       const pairing = result.pairings.find(
         (p) =>
-          (p.whiteId === 'A' && p.blackId === 'B') ||
-          (p.whiteId === 'B' && p.blackId === 'A'),
+          (p.white === 'A' && p.black === 'B') ||
+          (p.white === 'B' && p.black === 'A'),
       );
       expect(pairing).toBeDefined();
-      expect(pairing!.whiteId).toBe('A');
+      expect(pairing!.white).toBe('A');
     });
   });
 
@@ -257,16 +255,16 @@ describe('swissTeam', () => {
     it('never pairs the same two teams twice across rounds (4 teams, 2 rounds)', () => {
       const result1 = pair(FOUR_TEAMS, []);
       const round1Games: Game[] = result1.pairings.map((p) => ({
-        blackId: p.blackId,
+        black: p.black,
         result: 0.5 as const,
-        whiteId: p.whiteId,
+        white: p.white,
       }));
       const result2 = pair(FOUR_TEAMS, [round1Games]);
       for (const p2 of result2.pairings) {
         const isRematch = result1.pairings.some(
           (p1) =>
-            (p1.whiteId === p2.whiteId && p1.blackId === p2.blackId) ||
-            (p1.whiteId === p2.blackId && p1.blackId === p2.whiteId),
+            (p1.white === p2.white && p1.black === p2.black) ||
+            (p1.white === p2.black && p1.black === p2.white),
         );
         expect(isRematch).toBe(false);
       }
@@ -292,9 +290,9 @@ describe('swissTeam', () => {
 
         // Record games (all draws for simplicity)
         const roundGames: Game[] = result.pairings.map((p) => ({
-          blackId: p.blackId,
+          black: p.black,
           result: 0.5 as const,
-          whiteId: p.whiteId,
+          white: p.white,
         }));
         games = [...games, roundGames];
       }
@@ -303,7 +301,7 @@ describe('swissTeam', () => {
       const allPairs = new Set<string>();
       for (const roundGames of games) {
         for (const g of roundGames) {
-          const key = [g.whiteId, g.blackId].toSorted().join('-');
+          const key = [g.white, g.black].toSorted().join('-');
           expect(allPairs.has(key)).toBe(false);
           allPairs.add(key);
         }

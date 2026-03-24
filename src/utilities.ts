@@ -2,26 +2,26 @@ import type { Game, Player } from './types.js';
 
 type Color = 'black' | 'white';
 
-/** Sentinel: empty string blackId signals a bye received by whiteId. */
+/** Sentinel: empty string black signals a bye received by white. */
 const BYE_SENTINEL = '';
 
 function gamesForPlayer(playerId: string, games: Game[][]): Game[] {
   return games
     .flat()
-    .filter((g) => g.whiteId === playerId || g.blackId === playerId);
+    .filter((g) => g.white === playerId || g.black === playerId);
 }
 
 function score(playerId: string, games: Game[][]): number {
   let sum = 0;
   for (const g of gamesForPlayer(playerId, games)) {
-    sum += g.whiteId === playerId ? g.result : 1 - g.result;
+    sum += g.white === playerId ? g.result : 1 - g.result;
   }
   return sum;
 }
 
 function byeScore(playerId: string, games: Game[][]): number {
   return gamesForPlayer(playerId, games).filter(
-    (g) => g.whiteId === playerId && g.blackId === BYE_SENTINEL,
+    (g) => g.white === playerId && g.black === BYE_SENTINEL,
   ).length;
 }
 
@@ -29,14 +29,14 @@ function colorHistory(playerId: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
-      if (g.blackId === BYE_SENTINEL) {
+      if (g.black === BYE_SENTINEL) {
         continue;
       }
-      if (g.whiteId === playerId) {
+      if (g.white === playerId) {
         colors.push('white');
         break;
       }
-      if (g.blackId === playerId) {
+      if (g.black === playerId) {
         colors.push('black');
         break;
       }
@@ -79,10 +79,10 @@ function matchCount(playerId: string, games: Game[][]): number {
   let count = 0;
   for (const round of games) {
     for (const g of round) {
-      if (g.blackId === BYE_SENTINEL) {
+      if (g.black === BYE_SENTINEL) {
         continue;
       }
-      if (g.whiteId === playerId || g.blackId === playerId) {
+      if (g.white === playerId || g.black === playerId) {
         count++;
         break;
       }
@@ -100,14 +100,14 @@ function matchColorHistory(playerId: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
-      if (g.blackId === BYE_SENTINEL) {
+      if (g.black === BYE_SENTINEL) {
         continue;
       }
-      if (g.whiteId === playerId) {
+      if (g.white === playerId) {
         colors.push('white');
         break;
       }
-      if (g.blackId === playerId) {
+      if (g.black === playerId) {
         colors.push('black');
         break;
       }
@@ -124,8 +124,7 @@ function hasFaced(a: string, b: string, games: Game[][]): boolean {
     .flat()
     .some(
       (g) =>
-        (g.whiteId === a && g.blackId === b) ||
-        (g.whiteId === b && g.blackId === a),
+        (g.white === a && g.black === b) || (g.white === b && g.black === a),
     );
 }
 
@@ -137,11 +136,11 @@ function assignColors(
   a: Player,
   b: Player,
   games: Game[][],
-): { blackId: string; whiteId: string } {
+): { black: string; white: string } {
   if (colorPreference(a.id, games) > 0) {
-    return { blackId: b.id, whiteId: a.id };
+    return { black: b.id, white: a.id };
   }
-  return { blackId: a.id, whiteId: b.id };
+  return { black: a.id, white: b.id };
 }
 
 /**

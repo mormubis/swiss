@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0 — 2026-03-24
+
+### Changed
+
+- **BREAKING:** Renamed `Game.blackId` → `Game.black`, `Game.whiteId` →
+  `Game.white`.
+- **BREAKING:** Renamed `Pairing.blackId` → `Pairing.black`, `Pairing.whiteId` →
+  `Pairing.white`.
+- **BREAKING:** Renamed `Bye.playerId` → `Bye.player`.
+
 ## 1.0.0 — 2026-03-23
 
 ### Changed

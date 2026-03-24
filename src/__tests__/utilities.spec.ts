@@ -22,12 +22,12 @@ const PLAYERS: Player[] = [
 // Round 2: C(w) 0.5-0.5 A, D(w) 0-1 B  (blackId:A = black, so A is black; B wins as black)
 const GAMES: Game[][] = [
   [
-    { blackId: 'B', result: 1, whiteId: 'A' },
-    { blackId: 'D', result: 0, whiteId: 'C' },
+    { black: 'B', result: 1, white: 'A' },
+    { black: 'D', result: 0, white: 'C' },
   ],
   [
-    { blackId: 'A', result: 0.5, whiteId: 'C' },
-    { blackId: 'B', result: 0, whiteId: 'D' },
+    { black: 'A', result: 0.5, white: 'C' },
+    { black: 'B', result: 0, white: 'D' },
   ],
 ];
 
@@ -59,7 +59,7 @@ describe('byeScore', () => {
   });
 
   it('returns 1 when player has received one bye', () => {
-    const gamesWithBye: Game[][] = [[{ blackId: '', result: 1, whiteId: 'A' }]];
+    const gamesWithBye: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
     expect(byeScore('A', gamesWithBye)).toBe(1);
   });
 });

@@ -28,7 +28,7 @@ describe('lim', () => {
       expect(result.pairings).toHaveLength(2);
       expect(result.byes).toHaveLength(0);
       const ids = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(ids).toContain('A-C');
       expect(ids).toContain('B-D');
@@ -39,7 +39,7 @@ describe('lim', () => {
       expect(result.pairings).toHaveLength(3);
       expect(result.byes).toHaveLength(0);
       const ids = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       expect(ids).toContain('A-D');
       expect(ids).toContain('B-E');
@@ -51,18 +51,18 @@ describe('lim', () => {
     it('assigns a bye to the lowest-ranked player', () => {
       const result = pair(FOUR_PLAYERS.slice(0, 3), []);
       expect(result.byes).toHaveLength(1);
-      expect(result.byes[0]?.playerId).toBe('C');
+      expect(result.byes[0]?.player).toBe('C');
       expect(result.pairings).toHaveLength(1);
     });
 
     it('does not give a bye to a player who already had one', () => {
       const threePlayers = FOUR_PLAYERS.slice(0, 3);
       const round1Games: Game[] = [
-        { blackId: '', result: 1, whiteId: 'C' },
-        { blackId: 'B', result: 1, whiteId: 'A' },
+        { black: '', result: 1, white: 'C' },
+        { black: 'B', result: 1, white: 'A' },
       ];
       const result = pair(threePlayers, [round1Games]);
-      expect(result.byes[0]?.playerId).not.toBe('C');
+      expect(result.byes[0]?.player).not.toBe('C');
     });
   });
 
@@ -71,14 +71,14 @@ describe('lim', () => {
       // A beat C in round 1; so A cannot face C again.
       // Default pairing in scoregroup {1pt}: A vs C — must exchange to A vs D or B vs C.
       const round1Games: Game[] = [
-        { blackId: 'C', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, whiteId: 'B' },
+        { black: 'C', result: 1, white: 'A' },
+        { black: 'D', result: 0, white: 'B' },
       ];
       // After round 1: A=1, B=0, C=0, D=1
       // scoregroup 1: A and D; scoregroup 0: B and C
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       // A vs D is valid (didn't play); B vs C is valid (didn't play)
       expect(pairs).toContain('A-D');
@@ -89,20 +89,20 @@ describe('lim', () => {
       // All 4 players have 1 point but A already played C (the proposed pair 1v3)
       // (Making everyone have the same score so they're all in one group)
       const round1Games: Game[] = [
-        { blackId: 'C', result: 0.5, whiteId: 'A' },
-        { blackId: 'B', result: 0.5, whiteId: 'D' },
+        { black: 'C', result: 0.5, white: 'A' },
+        { black: 'B', result: 0.5, white: 'D' },
       ];
       // All at 0.5 pts — one scoregroup
       // Proposed: A vs C (rematch!) and D vs B (rematch!)
       // Must exchange: try A vs B and C vs D (or A vs D and B vs C)
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const pairs = result.pairings.map((p) =>
-        [p.whiteId, p.blackId].toSorted().join('-'),
+        [p.white, p.black].toSorted().join('-'),
       );
       // No rematches
       for (const pairKey of pairs) {
         const wasPlayed = round1Games.some(
-          (g) => [g.whiteId, g.blackId].toSorted().join('-') === pairKey,
+          (g) => [g.white, g.black].toSorted().join('-') === pairKey,
         );
         expect(wasPlayed).toBe(false);
       }
@@ -114,11 +114,11 @@ describe('lim', () => {
       const result = pair(FOUR_PLAYERS, []);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
-        allIds.add(p.whiteId);
-        allIds.add(p.blackId);
+        allIds.add(p.white);
+        allIds.add(p.black);
       }
       for (const b of result.byes) {
-        allIds.add(b.playerId);
+        allIds.add(b.player);
       }
       for (const player of FOUR_PLAYERS) {
         expect(allIds.has(player.id)).toBe(true);
@@ -129,11 +129,11 @@ describe('lim', () => {
       const result = pair(SIX_PLAYERS, []);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
-        allIds.add(p.whiteId);
-        allIds.add(p.blackId);
+        allIds.add(p.white);
+        allIds.add(p.black);
       }
       for (const b of result.byes) {
-        allIds.add(b.playerId);
+        allIds.add(b.player);
       }
       for (const player of SIX_PLAYERS) {
         expect(allIds.has(player.id)).toBe(true);
@@ -146,17 +146,17 @@ describe('lim', () => {
       // Round 1: A(w) vs B(b) → draw; C(w) vs D(b) → draw
       // All at 0.5 pts; B and D played black, A and C played white
       const round1Games: Game[] = [
-        { blackId: 'B', result: 0.5, whiteId: 'A' },
-        { blackId: 'D', result: 0.5, whiteId: 'C' },
+        { black: 'B', result: 0.5, white: 'A' },
+        { black: 'D', result: 0.5, white: 'C' },
       ];
       // All at 0.5 pts — one scoregroup; B played black → should get white in round 2
       const result = pair(FOUR_PLAYERS, [round1Games]);
       const bPairing = result.pairings.find(
-        (p) => p.whiteId === 'B' || p.blackId === 'B',
+        (p) => p.white === 'B' || p.black === 'B',
       );
       expect(bPairing).toBeDefined();
       // B played black last round; B should get white (alternate)
-      expect(bPairing?.whiteId).toBe('B');
+      expect(bPairing?.white).toBe('B');
     });
 
     it('player who had same color last 2 rounds gets the alternate', () => {
@@ -165,19 +165,19 @@ describe('lim', () => {
       // A: white, white → must get black in round 3
       // Scores: A=2, B=1, C=0, D=0
       const round1Games: Game[] = [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, whiteId: 'C' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'D', result: 0, white: 'C' },
       ];
       const round2Games: Game[] = [
-        { blackId: 'D', result: 1, whiteId: 'A' },
-        { blackId: 'C', result: 1, whiteId: 'B' },
+        { black: 'D', result: 1, white: 'A' },
+        { black: 'C', result: 1, white: 'B' },
       ];
       const result = pair(FOUR_PLAYERS, [round1Games, round2Games]);
       const aPairing = result.pairings.find(
-        (p) => p.whiteId === 'A' || p.blackId === 'A',
+        (p) => p.white === 'A' || p.black === 'A',
       );
       expect(aPairing).toBeDefined();
-      expect(aPairing?.blackId).toBe('A');
+      expect(aPairing?.black).toBe('A');
     });
   });
 
@@ -187,19 +187,19 @@ describe('lim', () => {
       // Round 2: A(w) vs D(b) → A wins; B(w) vs C(b) → B wins
       // A played white in rounds 1 and 2; in round 3, A must play black
       const round1Games: Game[] = [
-        { blackId: 'B', result: 1, whiteId: 'A' },
-        { blackId: 'D', result: 0, whiteId: 'C' },
+        { black: 'B', result: 1, white: 'A' },
+        { black: 'D', result: 0, white: 'C' },
       ];
       const round2Games: Game[] = [
-        { blackId: 'D', result: 1, whiteId: 'A' },
-        { blackId: 'C', result: 1, whiteId: 'B' },
+        { black: 'D', result: 1, white: 'A' },
+        { black: 'C', result: 1, white: 'B' },
       ];
       const result = pair(FOUR_PLAYERS, [round1Games, round2Games]);
       const aPairing = result.pairings.find(
-        (p) => p.whiteId === 'A' || p.blackId === 'A',
+        (p) => p.white === 'A' || p.black === 'A',
       );
       expect(aPairing).toBeDefined();
-      expect(aPairing?.blackId).toBe('A');
+      expect(aPairing?.black).toBe('A');
     });
   });
 
@@ -207,18 +207,18 @@ describe('lim', () => {
     it('never pairs the same two players twice across 2 rounds', () => {
       const round1Result = pair(FOUR_PLAYERS, []);
       const round1Games: Game[] = round1Result.pairings.map((p) => ({
-        blackId: p.blackId,
+        black: p.black,
         result: 1 as const,
-        whiteId: p.whiteId,
+        white: p.white,
       }));
       const round2Result = pair(FOUR_PLAYERS, [round1Games]);
       const round1Pairs = new Set(
         round1Result.pairings.map((p) =>
-          [p.whiteId, p.blackId].toSorted().join('-'),
+          [p.white, p.black].toSorted().join('-'),
         ),
       );
       for (const p of round2Result.pairings) {
-        const key = [p.whiteId, p.blackId].toSorted().join('-');
+        const key = [p.white, p.black].toSorted().join('-');
         expect(round1Pairs.has(key)).toBe(false);
       }
     });
@@ -229,19 +229,19 @@ describe('lim', () => {
       // After round 1: A=1, B=0.5, C=0.5, D=0, E=0.5, F=0.5
       // median = 0.5; order: 1 → 0 → 0.5
       const round1Games: Game[] = [
-        { blackId: 'D', result: 1, whiteId: 'A' },
-        { blackId: 'E', result: 0.5, whiteId: 'B' },
-        { blackId: 'F', result: 0.5, whiteId: 'C' },
+        { black: 'D', result: 1, white: 'A' },
+        { black: 'E', result: 0.5, white: 'B' },
+        { black: 'F', result: 0.5, white: 'C' },
       ];
       // This test just verifies the function runs without error and returns valid pairings
       const result = pair(SIX_PLAYERS, [round1Games]);
       const allIds = new Set<string>();
       for (const p of result.pairings) {
-        allIds.add(p.whiteId);
-        allIds.add(p.blackId);
+        allIds.add(p.white);
+        allIds.add(p.black);
       }
       for (const b of result.byes) {
-        allIds.add(b.playerId);
+        allIds.add(b.player);
       }
       for (const player of SIX_PLAYERS) {
         expect(allIds.has(player.id)).toBe(true);
@@ -260,39 +260,39 @@ describe('lim', () => {
 
         // Check no rematches
         for (const p of result.pairings) {
-          const key = [p.whiteId, p.blackId].toSorted().join('-') as string;
+          const key = [p.white, p.black].toSorted().join('-') as string;
           const alreadyPlayed = allPairings.some(
             ([a, b]) => [a, b].toSorted().join('-') === key,
           );
           expect(alreadyPlayed).toBe(false);
-          allPairings.push([p.whiteId, p.blackId]);
+          allPairings.push([p.white, p.black]);
         }
 
         // All players appear exactly once
         const roundIds = new Set<string>();
         for (const p of result.pairings) {
-          expect(roundIds.has(p.whiteId)).toBe(false);
-          expect(roundIds.has(p.blackId)).toBe(false);
-          roundIds.add(p.whiteId);
-          roundIds.add(p.blackId);
+          expect(roundIds.has(p.white)).toBe(false);
+          expect(roundIds.has(p.black)).toBe(false);
+          roundIds.add(p.white);
+          roundIds.add(p.black);
         }
         for (const b of result.byes) {
-          expect(roundIds.has(b.playerId)).toBe(false);
-          roundIds.add(b.playerId);
+          expect(roundIds.has(b.player)).toBe(false);
+          roundIds.add(b.player);
         }
         expect(roundIds.size).toBe(SIX_PLAYERS.length);
 
         // Simulate results: white always wins
         const roundGames: Game[] = [
           ...result.pairings.map((p) => ({
-            blackId: p.blackId,
+            black: p.black,
             result: 1 as const,
-            whiteId: p.whiteId,
+            white: p.white,
           })),
           ...result.byes.map((b) => ({
-            blackId: '',
+            black: '',
             result: 1 as const,
-            whiteId: b.playerId,
+            white: b.player,
           })),
         ];
         games = [...games, roundGames];
@@ -308,28 +308,28 @@ describe('lim', () => {
         // All players appear exactly once
         const roundIds = new Set<string>();
         for (const p of result.pairings) {
-          expect(roundIds.has(p.whiteId)).toBe(false);
-          expect(roundIds.has(p.blackId)).toBe(false);
-          roundIds.add(p.whiteId);
-          roundIds.add(p.blackId);
+          expect(roundIds.has(p.white)).toBe(false);
+          expect(roundIds.has(p.black)).toBe(false);
+          roundIds.add(p.white);
+          roundIds.add(p.black);
         }
         for (const b of result.byes) {
-          expect(roundIds.has(b.playerId)).toBe(false);
-          roundIds.add(b.playerId);
+          expect(roundIds.has(b.player)).toBe(false);
+          roundIds.add(b.player);
         }
         expect(roundIds.size).toBe(FOUR_PLAYERS.length);
 
         // Simulate results: draw
         const roundGames: Game[] = [
           ...result.pairings.map((p) => ({
-            blackId: p.blackId,
+            black: p.black,
             result: 0.5 as const,
-            whiteId: p.whiteId,
+            white: p.white,
           })),
           ...result.byes.map((b) => ({
-            blackId: '',
+            black: '',
             result: 1 as const,
-            whiteId: b.playerId,
+            white: b.player,
           })),
         ];
         games = [...games, roundGames];

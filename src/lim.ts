@@ -285,7 +285,7 @@ function allocateLimColors(
   b: Player,
   games: Game[][],
   ranked: Player[],
-): { blackId: string; whiteId: string } {
+): { black: string; white: string } {
   const histA = colorHistory(a.id, games);
   const histB = colorHistory(b.id, games);
   const lastTwoA = histA.slice(-2);
@@ -298,21 +298,21 @@ function allocateLimColors(
   if (aLastTwoSame && !bLastTwoSame) {
     const aColor = lastTwoA[0];
     return aColor === 'white'
-      ? { blackId: a.id, whiteId: b.id }
-      : { blackId: b.id, whiteId: a.id };
+      ? { black: a.id, white: b.id }
+      : { black: b.id, white: a.id };
   }
   if (bLastTwoSame && !aLastTwoSame) {
     const bColor = lastTwoB[0];
     return bColor === 'white'
-      ? { blackId: b.id, whiteId: a.id }
-      : { blackId: a.id, whiteId: b.id };
+      ? { black: b.id, white: a.id }
+      : { black: a.id, white: b.id };
   }
   if (aLastTwoSame && bLastTwoSame) {
     // Both need alternates — they need opposite colors (guaranteed by isLimCompatible)
     const aNeeds = lastTwoA[0] === 'white' ? 'black' : 'white';
     return aNeeds === 'white'
-      ? { blackId: b.id, whiteId: a.id }
-      : { blackId: a.id, whiteId: b.id };
+      ? { black: b.id, white: a.id }
+      : { black: a.id, white: b.id };
   }
 
   // Use color preference to determine colors
@@ -322,9 +322,9 @@ function allocateLimColors(
   if (prefA !== prefB) {
     // Give white to player with more black excess (positive pref = played more black = wants white)
     if (prefA > prefB) {
-      return { blackId: b.id, whiteId: a.id };
+      return { black: b.id, white: a.id };
     }
-    return { blackId: a.id, whiteId: b.id };
+    return { black: a.id, white: b.id };
   }
 
   // Equal preference: use rank (index in ranked array) for tiebreak
@@ -340,21 +340,21 @@ function allocateLimColors(
       // a is higher ranked — give a the alternate from last round
       const alternate = lastA === 'white' ? 'black' : 'white';
       return alternate === 'white'
-        ? { blackId: b.id, whiteId: a.id }
-        : { blackId: a.id, whiteId: b.id };
+        ? { black: b.id, white: a.id }
+        : { black: a.id, white: b.id };
     } else {
       const alternate = lastB === 'white' ? 'black' : 'white';
       return alternate === 'white'
-        ? { blackId: a.id, whiteId: b.id }
-        : { blackId: b.id, whiteId: a.id };
+        ? { black: a.id, white: b.id }
+        : { black: b.id, white: a.id };
     }
   }
 
   // Round 1 or no history: higher-ranked (lower index) gets white
   if (rankA <= rankB) {
-    return { blackId: b.id, whiteId: a.id };
+    return { black: b.id, white: a.id };
   }
-  return { blackId: a.id, whiteId: b.id };
+  return { black: a.id, white: b.id };
 }
 
 /**
@@ -365,14 +365,14 @@ function pairGroup(
   group: Player[],
   games: Game[][],
   ranked: Player[],
-): { pairings: { blackId: string; whiteId: string }[]; unpaired: Player[] } {
+): { pairings: { black: string; white: string }[]; unpaired: Player[] } {
   if (group.length < 2) {
     return { pairings: [], unpaired: [...group] };
   }
 
   const matching = findBestMatching(group, games);
   const paired = new Set<number>();
-  const pairings: { blackId: string; whiteId: string }[] = [];
+  const pairings: { black: string; white: string }[] = [];
 
   for (const [ti, bi] of matching) {
     const topPlayer = group[ti];
@@ -429,7 +429,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   const toBePaired = ranked.filter((p) => p.id !== byePlayer?.id);
   const roundsPlayed = games.length;
 
-  const allPairings: { blackId: string; whiteId: string }[] = [];
+  const allPairings: { black: string; white: string }[] = [];
   const alreadyPaired = new Set<string>();
 
   // Get score groups
@@ -492,8 +492,8 @@ function pair(players: Player[], games: Game[][]): PairingResult {
 
     for (const pairing of pairings) {
       allPairings.push(pairing);
-      alreadyPaired.add(pairing.whiteId);
-      alreadyPaired.add(pairing.blackId);
+      alreadyPaired.add(pairing.white);
+      alreadyPaired.add(pairing.black);
     }
 
     // Collect all players that need to float
@@ -536,13 +536,13 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     const { pairings } = pairGroup(remainingUnpaired, games, ranked);
     for (const pairing of pairings) {
       allPairings.push(pairing);
-      alreadyPaired.add(pairing.whiteId);
-      alreadyPaired.add(pairing.blackId);
+      alreadyPaired.add(pairing.white);
+      alreadyPaired.add(pairing.black);
     }
   }
 
   return {
-    byes: byePlayer === undefined ? [] : [{ playerId: byePlayer.id }],
+    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
     pairings: allPairings,
   };
 }

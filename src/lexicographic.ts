@@ -7,7 +7,7 @@ type ColorAllocator = (
   b: Player,
   players: Player[],
   games: Game[][],
-) => { blackId: string; whiteId: string };
+) => { black: string; white: string };
 
 /**
  * Ranks players for lexicographic pairing (FIDE C.04.5 Article 1.2):
@@ -18,9 +18,9 @@ function rankByScoreThenTPN(players: Player[], games: Game[][]): Player[] {
   for (const p of players) {
     let sum = 0;
     for (const g of games.flat()) {
-      if (g.whiteId === p.id) {
+      if (g.white === p.id) {
         sum += g.result;
-      } else if (g.blackId === p.id) {
+      } else if (g.black === p.id) {
         sum += 1 - g.result;
       }
     }
@@ -64,9 +64,9 @@ function assignLexicographicBye(
   for (const p of candidates) {
     let sum = 0;
     for (const g of games.flat()) {
-      if (g.whiteId === p.id) {
+      if (g.white === p.id) {
         sum += g.result;
-      } else if (g.blackId === p.id) {
+      } else if (g.black === p.id) {
         sum += 1 - g.result;
       }
     }

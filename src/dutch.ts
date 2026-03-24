@@ -64,8 +64,8 @@ function pair(players: Player[], games: Game[][]): PairingResult {
         .flat()
         .some(
           (g) =>
-            (g.whiteId === a.id && g.blackId === b.id) ||
-            (g.whiteId === b.id && g.blackId === a.id),
+            (g.white === a.id && g.black === b.id) ||
+            (g.white === b.id && g.black === a.id),
         );
       if (alreadyFaced) {
         continue;
@@ -114,7 +114,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   }
 
   return {
-    byes: byePlayer === undefined ? [] : [{ playerId: byePlayer.id }],
+    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
     pairings,
   };
 }

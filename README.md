@@ -35,13 +35,13 @@ const players: Player[] = [
 // Pair round 1 (no games played yet)
 const round1 = pair(players, []);
 console.log(round1.pairings);
-// [{ whiteId: 'alice', blackId: 'carol' }, { whiteId: 'bob', blackId: 'dave' }]
+// [{ white: 'alice', black: 'carol' }, { white: 'bob', black: 'dave' }]
 
 // Submit results — games[n] = round n+1, no `round` field on Game
 const games: Game[][] = [
   [
-    { whiteId: 'alice', blackId: 'carol', result: 1 },
-    { whiteId: 'bob', blackId: 'dave', result: 0.5 },
+    { white: 'alice', black: 'carol', result: 1 },
+    { white: 'bob', black: 'dave', result: 0.5 },
   ],
 ];
 
@@ -74,12 +74,12 @@ interface PairingResult {
 }
 
 interface Pairing {
-  blackId: string;
-  whiteId: string;
+  black: string;
+  white: string;
 }
 
 interface Bye {
-  playerId: string;
+  player: string;
 }
 ```
 
@@ -121,8 +121,8 @@ const round1 = pair(players, []);
 // Record both games of the match in games[0] (round 1)
 const games: Game[][] = [
   [
-    { whiteId: 'alice', blackId: 'bob', result: 1 }, // game 1
-    { whiteId: 'bob', blackId: 'alice', result: 0.5 }, // game 2
+    { white: 'alice', black: 'bob', result: 1 }, // game 1
+    { white: 'bob', black: 'alice', result: 0.5 }, // game 2
   ],
 ];
 // Alice scored 1 + 0.5 = 1.5 points for this match
@@ -134,22 +134,22 @@ entries in the same round slot:
 ```typescript
 const games: Game[][] = [
   [
-    { whiteId: 'carol', blackId: '', result: 1 },
-    { whiteId: 'carol', blackId: '', result: 0.5 },
+    { white: 'carol', black: '', result: 1 },
+    { white: 'carol', black: '', result: 0.5 },
   ],
 ];
 ```
 
 ### Byes
 
-A bye is represented as a `Game` with `blackId: ''` (empty string). The player
-in `whiteId` receives the bye point:
+A bye is represented as a `Game` with `black: ''` (empty string). The player in
+`white` receives the bye point:
 
 ```typescript
 const games: Game[][] = [
   [
-    { whiteId: 'alice', blackId: 'carol', result: 1 },
-    { whiteId: 'bob', blackId: '', result: 1 }, // bye for bob
+    { white: 'alice', black: 'carol', result: 1 },
+    { white: 'bob', black: '', result: 1 }, // bye for bob
   ],
 ];
 ```
@@ -182,9 +182,9 @@ function toGames(t: Tournament): Game[][] {
       const idx = r.round - 1;
       byRound[idx] ??= [];
       byRound[idx].push({
-        blackId: String(r.opponentId),
+        black: String(r.opponentId),
         result,
-        whiteId: String(player.pairingNumber),
+        white: String(player.pairingNumber),
       });
     }
   }
@@ -204,9 +204,9 @@ interface Player {
 }
 
 interface Game {
-  blackId: string; // '' for a bye
+  black: string; // '' for a bye
   result: Result; // from white's perspective
-  whiteId: string;
+  white: string;
   // No `round` field — round is encoded by position in Game[][]
 }
 
