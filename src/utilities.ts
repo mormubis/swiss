@@ -2,9 +2,6 @@ import type { Game, Player } from './types.js';
 
 type Color = 'black' | 'white';
 
-/** Sentinel: empty string black signals a bye received by white. */
-const BYE_SENTINEL = '';
-
 function gamesForPlayer(playerId: string, games: Game[][]): Game[] {
   return games
     .flat()
@@ -20,16 +17,15 @@ function score(playerId: string, games: Game[][]): number {
 }
 
 function byeScore(playerId: string, games: Game[][]): number {
-  return gamesForPlayer(playerId, games).filter(
-    (g) => g.white === playerId && g.black === BYE_SENTINEL,
-  ).length;
+  return gamesForPlayer(playerId, games).filter((g) => g.black === g.white)
+    .length;
 }
 
 function colorHistory(playerId: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
-      if (g.black === BYE_SENTINEL) {
+      if (g.black === g.white) {
         continue;
       }
       if (g.white === playerId) {
@@ -79,7 +75,7 @@ function matchCount(playerId: string, games: Game[][]): number {
   let count = 0;
   for (const round of games) {
     for (const g of round) {
-      if (g.black === BYE_SENTINEL) {
+      if (g.black === g.white) {
         continue;
       }
       if (g.white === playerId || g.black === playerId) {
@@ -100,7 +96,7 @@ function matchColorHistory(playerId: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
-      if (g.black === BYE_SENTINEL) {
+      if (g.black === g.white) {
         continue;
       }
       if (g.white === playerId) {
@@ -208,7 +204,6 @@ function typeAColorPreference(
 }
 
 export {
-  BYE_SENTINEL,
   assignBye,
   assignColors,
   byeScore,

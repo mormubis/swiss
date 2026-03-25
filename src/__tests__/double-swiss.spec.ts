@@ -90,8 +90,8 @@ describe('doubleSwiss', () => {
     it('does not assign bye to player who already received one (C2 rule)', () => {
       // C already received a bye in round 1 — should not get another
       const round1Games: Game[] = [
-        { black: '', result: 1, white: 'C' },
-        { black: '', result: 0.5, white: 'C' },
+        { black: 'C', result: 1, white: 'C' },
+        { black: 'C', result: 0.5, white: 'C' },
       ];
       const result = pair(THREE_PLAYERS, [round1Games]);
       expect(result.byes[0]?.player).not.toBe('C');
@@ -330,8 +330,8 @@ describe('doubleSwiss', () => {
       ];
       const round1Games: Game[] = [
         // B received a bye in round 1 — gives score but no match color history
-        { black: '', result: 1, white: 'B' },
-        { black: '', result: 0.5, white: 'B' },
+        { black: 'B', result: 1, white: 'B' },
+        { black: 'B', result: 0.5, white: 'B' },
       ];
       // Scores: A=0, B=1.5; matchColorHistory: A=[], B=[] (byes excluded)
       // Round 2: A vs B haven't faced each other → paired.

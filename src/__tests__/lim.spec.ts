@@ -58,7 +58,7 @@ describe('lim', () => {
     it('does not give a bye to a player who already had one', () => {
       const threePlayers = FOUR_PLAYERS.slice(0, 3);
       const round1Games: Game[] = [
-        { black: '', result: 1, white: 'C' },
+        { black: 'C', result: 1, white: 'C' },
         { black: 'B', result: 1, white: 'A' },
       ];
       const result = pair(threePlayers, [round1Games]);
@@ -290,7 +290,7 @@ describe('lim', () => {
             white: p.white,
           })),
           ...result.byes.map((b) => ({
-            black: '',
+            black: b.player,
             result: 1 as const,
             white: b.player,
           })),
@@ -327,7 +327,7 @@ describe('lim', () => {
             white: p.white,
           })),
           ...result.byes.map((b) => ({
-            black: '',
+            black: b.player,
             result: 1 as const,
             white: b.player,
           })),

@@ -24,13 +24,13 @@ describe('matchCount', () => {
   });
 
   it('does not count bye rounds', () => {
-    const games: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
+    const games: Game[][] = [[{ black: 'A', result: 1, white: 'A' }]];
     expect(matchCount('A', games)).toBe(0);
   });
 
   it('does not count bye rounds even when mixed with real games', () => {
     const games: Game[][] = [
-      [{ black: '', result: 1, white: 'A' }],
+      [{ black: 'A', result: 1, white: 'A' }],
       [
         { black: 'B', result: 1, white: 'A' },
         { black: 'A', result: 0, white: 'B' },
@@ -66,7 +66,7 @@ describe('matchColorHistory', () => {
 
   it('skips bye rounds', () => {
     const games: Game[][] = [
-      [{ black: '', result: 1, white: 'A' }],
+      [{ black: 'A', result: 1, white: 'A' }],
       [
         { black: 'B', result: 1, white: 'A' },
         { black: 'A', result: 0, white: 'B' },

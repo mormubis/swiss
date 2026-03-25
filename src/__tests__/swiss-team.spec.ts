@@ -108,7 +108,7 @@ describe('swissTeam', () => {
     });
 
     it('does not assign bye to team that already received one (C2 rule)', () => {
-      const round1Games: Game[] = [{ black: '', result: 1, white: 'C' }];
+      const round1Games: Game[] = [{ black: 'C', result: 1, white: 'C' }];
       const result = pair(THREE_TEAMS, [round1Games]);
       expect(result.byes[0]?.player).not.toBe('C');
     });
@@ -134,7 +134,7 @@ describe('swissTeam', () => {
       ];
       const round1Games: Game[] = [
         // B received a bye in round 1 — gives score but no match color history
-        { black: '', result: 1, white: 'B' },
+        { black: 'B', result: 1, white: 'B' },
       ];
       const result = pair(players, [round1Games]);
       const pairing = result.pairings[0];

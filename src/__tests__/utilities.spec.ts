@@ -59,7 +59,7 @@ describe('byeScore', () => {
   });
 
   it('returns 1 when player has received one bye', () => {
-    const gamesWithBye: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
+    const gamesWithBye: Game[][] = [[{ black: 'A', result: 1, white: 'A' }]];
     expect(byeScore('A', gamesWithBye)).toBe(1);
   });
 });
