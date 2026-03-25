@@ -7,7 +7,6 @@
   "devDependencies": {
     "@echecs/trf": "^3.1.1",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.5.0",
     "@typescript-eslint/parser": "^8.57.0",
     "@vitest/coverage-v8": "^4.1.0",
     "@vitest/eslint-plugin": "^1.6.12",

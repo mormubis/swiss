@@ -12,11 +12,13 @@
  * specification for a future full FIDE Dutch implementation.
  */
 import { parse } from '@echecs/trf';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { pair } from '../dutch.js';
+import dutchC5 from './fixtures/dutch_2025_C5.trf?raw';
+import dutchC9 from './fixtures/dutch_2025_C9.trf?raw';
+import issue15 from './fixtures/issue_15.trf?raw';
+import issue7 from './fixtures/issue_7.trf?raw';
 
 import type { Game, Player } from '../types.js';
 import type { Tournament } from '@echecs/trf';
@@ -109,10 +111,18 @@ function preAssignedIds(
 // Fixture loading
 // ---------------------------------------------------------------------------
 
-const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures');
+const FIXTURES: Record<string, string> = {
+  dutch_2025_C5: dutchC5,
+  dutch_2025_C9: dutchC9,
+  issue_15: issue15,
+  issue_7: issue7,
+};
 
 function loadFixture(name: string): Tournament {
-  const content = readFileSync(path.join(FIXTURES_DIR, `${name}.trf`), 'utf8');
+  const content = FIXTURES[name];
+  if (content === undefined) {
+    throw new Error(`Unknown fixture: ${name}`);
+  }
   const tournament = parse(content);
   if (tournament === null) {
     throw new Error(`Failed to parse fixture: ${name}`);
