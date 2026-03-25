@@ -2,37 +2,35 @@ import type { Game, Player } from './types.js';
 
 type Color = 'black' | 'white';
 
-function gamesForPlayer(playerId: string, games: Game[][]): Game[] {
-  return games
-    .flat()
-    .filter((g) => g.white === playerId || g.black === playerId);
+function gamesForPlayer(player: string, games: Game[][]): Game[] {
+  return games.flat().filter((g) => g.white === player || g.black === player);
 }
 
-function score(playerId: string, games: Game[][]): number {
+function score(player: string, games: Game[][]): number {
   let sum = 0;
-  for (const g of gamesForPlayer(playerId, games)) {
-    sum += g.white === playerId ? g.result : 1 - g.result;
+  for (const g of gamesForPlayer(player, games)) {
+    sum += g.white === player ? g.result : 1 - g.result;
   }
   return sum;
 }
 
-function byeScore(playerId: string, games: Game[][]): number {
-  return gamesForPlayer(playerId, games).filter((g) => g.black === g.white)
+function byeScore(player: string, games: Game[][]): number {
+  return gamesForPlayer(player, games).filter((g) => g.black === g.white)
     .length;
 }
 
-function colorHistory(playerId: string, games: Game[][]): Color[] {
+function colorHistory(player: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
       if (g.black === g.white) {
         continue;
       }
-      if (g.white === playerId) {
+      if (g.white === player) {
         colors.push('white');
         break;
       }
-      if (g.black === playerId) {
+      if (g.black === player) {
         colors.push('black');
         break;
       }
@@ -45,9 +43,9 @@ function colorHistory(playerId: string, games: Game[][]): Color[] {
  * Returns the color difference: positive means player has played more black
  * than white (prefers white next), negative means the opposite.
  */
-function colorPreference(playerId: string, games: Game[][]): number {
+function colorPreference(player: string, games: Game[][]): number {
   let diff = 0;
-  for (const color of colorHistory(playerId, games)) {
+  for (const color of colorHistory(player, games)) {
     diff += color === 'black' ? 1 : -1;
   }
   return diff;
@@ -71,14 +69,14 @@ function scoreGroups(
  * Returns the number of matches (unique rounds with a real opponent) played.
  * Bye rounds are not counted.
  */
-function matchCount(playerId: string, games: Game[][]): number {
+function matchCount(player: string, games: Game[][]): number {
   let count = 0;
   for (const round of games) {
     for (const g of round) {
       if (g.black === g.white) {
         continue;
       }
-      if (g.white === playerId || g.black === playerId) {
+      if (g.white === player || g.black === player) {
         count++;
         break;
       }
@@ -92,18 +90,18 @@ function matchCount(playerId: string, games: Game[][]): number {
  * For each match (unique round with a real opponent), the color is determined
  * by the first game in that round. Bye rounds are excluded.
  */
-function matchColorHistory(playerId: string, games: Game[][]): Color[] {
+function matchColorHistory(player: string, games: Game[][]): Color[] {
   const colors: Color[] = [];
   for (const round of games) {
     for (const g of round) {
       if (g.black === g.white) {
         continue;
       }
-      if (g.white === playerId) {
+      if (g.white === player) {
         colors.push('white');
         break;
       }
-      if (g.black === playerId) {
+      if (g.black === player) {
         colors.push('black');
         break;
       }
@@ -171,10 +169,10 @@ function assignBye(ranked: Player[], games: Game[][]): Player | undefined {
  * Returns 'white' if the team prefers White, 'black' if Black, undefined if no preference.
  */
 function typeAColorPreference(
-  playerId: string,
+  player: string,
   games: Game[][],
 ): Color | undefined {
-  const history = matchColorHistory(playerId, games);
+  const history = matchColorHistory(player, games);
   const whites = history.filter((c) => c === 'white').length;
   const blacks = history.filter((c) => c === 'black').length;
   const cd = whites - blacks; // color difference
