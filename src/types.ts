@@ -1,3 +1,11 @@
+type GameKind =
+  | 'forfeit-loss'
+  | 'forfeit-win'
+  | 'full-bye'
+  | 'half-bye'
+  | 'pairing-bye'
+  | 'zero-bye';
+
 type Result = 0 | 0.5 | 1;
 
 interface Bye {
@@ -6,6 +14,7 @@ interface Bye {
 
 interface Game {
   black: string;
+  kind?: GameKind;
   result: Result;
   white: string;
 }
@@ -25,4 +34,4 @@ interface Player {
   rating?: number;
 }
 
-export type { Bye, Game, Pairing, PairingResult, Player, Result };
+export type { Bye, Game, GameKind, Pairing, PairingResult, Player, Result };
