@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.2 — 2026-04-09
+
+### Changed
+
+- updated description to list all six pairing systems and remove
+  tiebreak/standings claims
+- removed misleading keywords (`buchholz`, `standings`, `tiebreak`)
+- added `double`, `lim`, and `team` keywords
+
 ## 3.0.1 — 2026-04-09
 
 ### Fixed

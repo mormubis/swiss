@@ -3,7 +3,7 @@
   "bugs": {
     "url": "https://github.com/mormubis/swiss/issues"
   },
-  "description": "Swiss chess tournament pairings and standings following FIDE rules. Implements Dutch, Dubov, and Burstein systems with Buchholz, Sonneborn-Berger, and progressive tiebreaks. Zero dependencies.",
+  "description": "Swiss chess tournament pairings following FIDE rules. Implements Dutch, Dubov, Burstein, Lim, Double, and Team Swiss systems. Zero dependencies.",
   "devDependencies": {
     "@echecs/trf": "^3.1.1",
     "@eslint/js": "^10.0.1",
@@ -65,19 +65,18 @@
   ],
   "homepage": "https://github.com/mormubis/swiss#readme",
   "keywords": [
-    "buchholz",
     "burstein",
     "chess",
+    "double",
     "dubov",
     "dutch",
     "fide",
+    "lim",
     "no-dependencies",
-    "pairing",
     "pairings",
     "sonneborn-berger",
-    "standings",
     "swiss",
-    "tiebreak",
+    "team",
     "tournament",
     "typescript"
   ],
@@ -106,5 +105,5 @@
     "test:watch": "pnpm run test --watch"
   },
   "type": "module",
-  "version": "3.0.1"
+  "version": "3.0.2"
 }
