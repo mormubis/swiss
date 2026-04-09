@@ -6,8 +6,8 @@ standings algorithms following FIDE rules.
 See the root `AGENTS.md` for workspace-wide conventions (package manager,
 TypeScript settings, formatting, naming, testing, ESLint rules).
 
-**Backlog:** See [`BACKLOG.md`](BACKLOG.md) for pending work items. Update it
-after completing any work.
+**Backlog:** tracked in
+[GitHub Issues](https://github.com/mormubis/swiss/issues).
 
 ---
 
@@ -202,6 +202,9 @@ Step-by-step process for releasing a new version. CI auto-publishes to npm when
    git commit -m "release: @echecs/swiss@x.y.z"
    git push
    ```
+
+   **The push is mandatory.** The release workflow only triggers on push to
+   `main`. A commit without a push means the release never happens.
 
 7. **CI takes over:** GitHub Actions detects the version bump, runs format →
    lint → test, and publishes to npm.

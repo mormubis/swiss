@@ -1,7 +1,6 @@
 # Swiss
 
 [![npm](https://img.shields.io/npm/v/@echecs/swiss)](https://www.npmjs.com/package/@echecs/swiss)
-[![Test](https://github.com/mormubis/swiss/actions/workflows/test.yml/badge.svg)](https://github.com/mormubis/swiss/actions/workflows/test.yml)
 [![Coverage](https://codecov.io/gh/mormubis/swiss/branch/main/graph/badge.svg)](https://codecov.io/gh/mormubis/swiss)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
