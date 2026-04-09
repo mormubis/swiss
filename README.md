@@ -115,7 +115,7 @@ round slot:
 import { pair } from '@echecs/swiss/double';
 
 const round1 = pair(players, []);
-// round1.pairings[0] = { whiteId: 'alice', blackId: 'bob' }
+// round1.pairings[0] = { white: 'alice', black: 'bob' }
 
 // Record both games of the match in games[0] (round 1)
 const games: Game[][] = [
@@ -204,10 +204,19 @@ interface Player {
 
 interface Game {
   black: string; // '' for a bye
+  kind?: GameKind; // optional: classifies unplayed rounds
   result: Result; // from white's perspective
   white: string;
   // No `round` field — round is encoded by position in Game[][]
 }
+
+type GameKind =
+  | 'forfeit-loss'
+  | 'forfeit-win'
+  | 'full-bye'
+  | 'half-bye'
+  | 'pairing-bye'
+  | 'zero-bye';
 
 type Result = 0 | 0.5 | 1;
 ```

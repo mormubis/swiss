@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.1 — 2026-04-09
+
+### Fixed
+
+- Documented `GameKind` and `Result` types in the Types section.
+- Added `Game.kind` field to the documented `Game` interface.
+- Fixed double-swiss example field names (`whiteId`/`blackId` →
+  `white`/`black`).
+
 ## 2.0.0 — 2026-03-24
 
 ### Changed
