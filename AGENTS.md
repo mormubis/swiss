@@ -3,6 +3,9 @@
 Agent guidance for the `@echecs/swiss` package — Swiss tournament pairing and
 standings algorithms following FIDE rules.
 
+**See also:** [`REFERENCES.md`](REFERENCES.md) |
+[`COMPARISON.md`](COMPARISON.md) | [`SPEC.md`](SPEC.md)
+
 See the root `AGENTS.md` for workspace-wide conventions (package manager,
 TypeScript settings, formatting, naming, testing, ESLint rules).
 
@@ -16,18 +19,6 @@ TypeScript settings, formatting, naming, testing, ESLint rules).
 Pure algorithm library, no runtime dependencies. Exports one `pair` function via
 six subpath imports — one per FIDE pairing system.
 
-### Subpath exports
-
-| Import path              | FIDE rule | Description                                                  |
-| ------------------------ | --------- | ------------------------------------------------------------ |
-| `@echecs/swiss`          | C.04.3    | Default import — Dutch system                                |
-| `@echecs/swiss/dutch`    | C.04.3    | Dutch system (top half vs bottom half within score groups)   |
-| `@echecs/swiss/dubov`    | C.04.4.1  | Dubov system (adjacent pairing)                              |
-| `@echecs/swiss/burstein` | C.04.4.2  | Burstein system (rank 1 vs rank last, etc.)                  |
-| `@echecs/swiss/lim`      | C.04.4.3  | Lim system (bi-directional pairing with strict colour rules) |
-| `@echecs/swiss/double`   | C.04.5    | Double-Swiss (two-game match Swiss)                          |
-| `@echecs/swiss/team`     | C.04.6    | Swiss Team (teams as players, Type A colour preferences)     |
-
 Each subpath exports a single `pair` function with the signature:
 
 ```ts
@@ -38,19 +29,6 @@ pair(players: Player[], games: Game[][]): PairingResult;
 `games[1]` contains round-2 games, and so on. The `Game` type no longer has a
 `round` field — round is determined by array position. There is no `round`
 parameter on `pair`; the next round number is inferred from `games.length + 1`.
-
----
-
-## Similar Libraries
-
-Use these to cross-check output when testing:
-
-- [`tournament-pairings`](https://www.npmjs.com/package/tournament-pairings) —
-  Swiss, round-robin, and elimination pairings for JavaScript.
-- [`tournament-organizer`](https://www.npmjs.com/package/tournament-organizer) —
-  JavaScript library for running tournaments with multiple formats.
-- [`swiss-tournament-calculator`](https://www.npmjs.com/package/swiss-tournament-calculator)
-  — FIDE-conformant Dutch Swiss pairing generator.
 
 ---
 
@@ -123,6 +101,20 @@ pnpm lint && pnpm test && pnpm build
   field. The next round to pair is `games.length + 1`.
 - All interface fields sorted alphabetically (`sort-keys` is an ESLint error).
 - Always use `.js` extensions on relative imports (NodeNext resolution).
+
+---
+
+## Unified Pairing Interface
+
+All pairing systems consumed by `@echecs/tournament` must conform to:
+
+```typescript
+type PairingSystem = (
+  players: Standing[],
+  games: Game[][],
+  options?: object,
+) => { pairings: Pairing[]; byes: Bye[] };
+```
 
 ---
 
