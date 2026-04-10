@@ -1,4 +1,4 @@
-import type { Game, Player } from './types.js';
+import type { FloatKind, Game, Player } from './types.js';
 
 type Color = 'black' | 'white';
 
@@ -201,20 +201,83 @@ function typeAColorPreference(
   return undefined;
 }
 
+/**
+ * Returns true when playerScore > totalRounds / 2 (FIDE C.04.3 Article 1.8).
+ */
+function isTopscorer(playerScore: number, totalRounds: number): boolean {
+  return playerScore > totalRounds / 2;
+}
+
+/**
+ * Returns count of rounds where player had no game at all (not even a bye).
+ * A bye (g.black === g.white) counts as played.
+ */
+function unplayedRounds(player: string, games: Game[][]): number {
+  let count = 0;
+  for (const round of games) {
+    const hasGame = round.some((g) => g.white === player || g.black === player);
+    if (!hasGame) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Returns per-round float status for a player.
+ * 'down' = player floated down (higher score or received bye),
+ * 'up' = player floated up (lower score),
+ * undefined = equal scores or no game that round.
+ */
+function floatHistory(player: string, games: Game[][]): FloatKind[] {
+  const result: FloatKind[] = [];
+  for (const [roundIndex, round] of games.entries()) {
+    const game = round.find((g) => g.white === player || g.black === player);
+
+    if (game === undefined) {
+      result.push(undefined);
+      continue;
+    }
+
+    // Bye sentinel: g.black === g.white
+    if (game.black === game.white) {
+      result.push('down');
+      continue;
+    }
+
+    const opponent = game.white === player ? game.black : game.white;
+    const previousGames = games.slice(0, roundIndex);
+    const playerScore = score(player, previousGames);
+    const opponentScore = score(opponent, previousGames);
+
+    if (playerScore > opponentScore) {
+      result.push('down');
+    } else if (playerScore < opponentScore) {
+      result.push('up');
+    } else {
+      result.push(undefined);
+    }
+  }
+  return result;
+}
+
 export {
   assignBye,
   assignColors,
   byeScore,
   colorHistory,
   colorPreference,
+  floatHistory,
   gamesForPlayer,
   hasFaced,
+  isTopscorer,
   matchColorHistory,
   matchCount,
   rankPlayers,
   score,
   scoreGroups,
   typeAColorPreference,
+  unplayedRounds,
 };
 
 export type { Color };

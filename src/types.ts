@@ -1,3 +1,5 @@
+type FloatKind = 'down' | 'up' | undefined;
+
 type GameKind =
   | 'forfeit-loss'
   | 'forfeit-win'
@@ -34,4 +36,13 @@ interface Player {
   rating?: number;
 }
 
-export type { Bye, Game, GameKind, Pairing, PairingResult, Player, Result };
+export type {
+  Bye,
+  FloatKind,
+  Game,
+  GameKind,
+  Pairing,
+  PairingResult,
+  Player,
+  Result,
+};
