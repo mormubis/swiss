@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- rewrote Dutch pairing system to implement full FIDE C.04.3 (2026 edition) with
+  all 21 criteria, replacing the simplified blossom-weighted approach
+- player array order now determines Tournament Pairing Number (TPN) for Dutch
+  pairings
+
+### Removed
+
+- removed internal `blossom.ts` (maximum weight matching no longer used by Dutch
+  system)
+
 ## 3.0.2 — 2026-04-09
 
 ### Changed
