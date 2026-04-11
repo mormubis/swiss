@@ -404,10 +404,13 @@ function evaluateCandidate(
   }
 
   // C15: MDP opponents who upfloated previous round
+  // Only the lower-score player (the MDP's opponent) is counted, not the MDP
   let c15 = 0;
   for (const [a, b] of pairings) {
-    if (a.floatHistory.at(-1) === 'up') c15++;
-    if (b.floatHistory.at(-1) === 'up') c15++;
+    if (a.score !== b.score) {
+      const opponent = a.score < b.score ? a : b;
+      if (opponent.floatHistory.at(-1) === 'up') c15++;
+    }
   }
 
   // C16: resident downfloaters who downfloated 2 rounds ago
@@ -417,10 +420,17 @@ function evaluateCandidate(
   }
 
   // C17: MDP opponents who upfloated 2 rounds ago
+  // Only the lower-score player (the MDP's opponent) is counted
   let c17 = 0;
   for (const [a, b] of pairings) {
-    if (a.floatHistory.length >= 2 && a.floatHistory.at(-2) === 'up') c17++;
-    if (b.floatHistory.length >= 2 && b.floatHistory.at(-2) === 'up') c17++;
+    if (a.score !== b.score) {
+      const opponent = a.score < b.score ? a : b;
+      if (
+        opponent.floatHistory.length >= 2 &&
+        opponent.floatHistory.at(-2) === 'up'
+      )
+        c17++;
+    }
   }
 
   // C18: score diffs of MDPs who downfloated previous round
@@ -455,12 +465,16 @@ function evaluateCandidate(
       c21 += Math.abs(b.score - a.score);
   }
 
+  // TODO(C8): not yet implemented — requires look-ahead into the next
+  // bracket to verify C1-C7 compliance. Cost position between c7 and c9
+  // is skipped; totalRounds would be needed here.
   void totalRounds;
 
   return [
     c5,
     c6,
     c7,
+    // C8 skipped — see TODO above
     c9,
     c10,
     c11,
@@ -781,11 +795,6 @@ function maxMatchingPair(sorted: RankedPlayer[], games: Game[][]): Candidate {
           match[current] = previous;
           match[previous] = current;
           current = previousPrevious === -2 ? -1 : previousPrevious;
-        }
-        if (current === start) {
-          const pf = parent[found] ?? found;
-          match[start] = pf;
-          match[pf] = start;
         }
         improved = true;
         break;
