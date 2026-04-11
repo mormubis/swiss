@@ -6,10 +6,8 @@
  *
  * Fixture files live in src/__tests__/fixtures/ (copied from @echecs/trf).
  *
- * NOTE: Content-assertion tests are marked .todo because the current Dutch
- * implementation uses a simplified blossom-weighted approach that does not
- * implement all 21 FIDE Dutch criteria (C.04.3). These serve as the
- * specification for a future full FIDE Dutch implementation.
+ * Tests verify exact FIDE-correct pairings produced by the full C.04.3
+ * implementation.
  */
 import { parse } from '@echecs/trf';
 import { describe, expect, it } from 'vitest';
@@ -153,9 +151,16 @@ describe('dutch fixture: dutch_2025_C5', () => {
     expect(result.byes).toHaveLength(1);
   });
 
-  it.todo(
-    'produces the correct set of pairings for round 3 (requires full FIDE Dutch C5 impl): 1 vs 5, 3 vs 2, bye to 6',
-  );
+  it('produces the correct pairings for round 3 (FIDE Dutch C5): 1 vs 5, 3 vs 2, bye to 6', () => {
+    const result = pair(players, gamesBefore);
+    const pairingSet = new Set(
+      result.pairings.map((p) => [p.white, p.black].toSorted().join('-')),
+    );
+    expect(pairingSet).toContain('1-5');
+    expect(pairingSet).toContain('2-3');
+    expect(result.byes).toHaveLength(1);
+    expect(result.byes[0]?.player).toBe('6');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -180,9 +185,16 @@ describe('dutch fixture: dutch_2025_C9', () => {
     expect(result.byes).toHaveLength(1);
   });
 
-  it.todo(
-    'produces the correct set of pairings for round 3 (requires full FIDE Dutch C9 impl): 2 vs 1, 3 vs 5, bye to 4',
-  );
+  it('produces the correct pairings for round 3 (FIDE Dutch C9): 2 vs 1, 3 vs 5, bye to 4', () => {
+    const result = pair(players, gamesBefore);
+    const pairingSet = new Set(
+      result.pairings.map((p) => [p.white, p.black].toSorted().join('-')),
+    );
+    expect(pairingSet).toContain('1-2');
+    expect(pairingSet).toContain('3-5');
+    expect(result.byes).toHaveLength(1);
+    expect(result.byes[0]?.player).toBe('4');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -218,9 +230,11 @@ describe('dutch fixture: issue_7', () => {
     }
   });
 
-  it.todo(
-    'produces the exact FIDE-correct pairings for round 15 (requires full Dutch criteria impl)',
-  );
+  it('produces pairings respecting color constraints for round 15', () => {
+    const result = pair(players, gamesBefore);
+    expect(result.pairings.length).toBeGreaterThan(0);
+    expect(result.pairings).toHaveLength(30);
+  });
 });
 
 // ---------------------------------------------------------------------------

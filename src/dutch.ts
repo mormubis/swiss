@@ -1041,27 +1041,18 @@ function pairBracket(
 }
 
 // ---------------------------------------------------------------------------
-// Main pair function
+// Bracket pass helper — returns paired tuples or undefined if pairing fails
 // ---------------------------------------------------------------------------
 
-function pair(players: Player[], games: Game[][]): PairingResult {
-  if (players.length < 2) {
-    throw new RangeError('at least 2 players are required');
-  }
-
-  const totalRounds = games.length + 1;
-  const ranked = sortByRank(buildRankedPlayers(players, games));
-  const needsBye = ranked.length % 2 === 1;
-
-  // Build a Map for O(1) player lookup by id
-  const playerMap = new Map<string, RankedPlayer>();
-  for (const p of ranked) {
-    playerMap.set(p.id, p);
-  }
-
-  // Build score groups descending — all players included
+function doBracketPass(
+  pool: RankedPlayer[],
+  games: Game[][],
+  playerMap: Map<string, RankedPlayer>,
+  totalRounds: number,
+): [RankedPlayer, RankedPlayer][] | undefined {
+  // pool must have even count
   const scoreGroupMap = new Map<number, RankedPlayer[]>();
-  for (const player of ranked) {
+  for (const player of pool) {
     const group = scoreGroupMap.get(player.score) ?? [];
     group.push(player);
     scoreGroupMap.set(player.score, group);
@@ -1099,45 +1090,111 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     }
   }
 
-  // Check if all players (except possible bye) are paired.
-  // If not, fall back to global matching on the entire player pool.
-  const pairedIdsCheck = new Set(allPairings.flatMap(([a, b]) => [a.id, b.id]));
-  const unpaired = ranked.filter((p) => !pairedIdsCheck.has(p.id));
-  const expectedUnpaired = needsBye ? 1 : 0;
+  // Verify all players in pool were paired
+  const pairedIds = new Set(allPairings.flatMap(([a, b]) => [a.id, b.id]));
+  const unpaired = pool.filter((p) => !pairedIds.has(p.id));
 
-  if (unpaired.length > expectedUnpaired) {
-    // Global fallback: ignore score group structure, match all players together
+  if (unpaired.length > 0) {
+    return undefined;
+  }
+
+  return allPairings;
+}
+
+// ---------------------------------------------------------------------------
+// Main pair function
+// ---------------------------------------------------------------------------
+
+function pair(players: Player[], games: Game[][]): PairingResult {
+  if (players.length < 2) {
+    throw new RangeError('at least 2 players are required');
+  }
+
+  const totalRounds = games.length + 1;
+  const ranked = sortByRank(buildRankedPlayers(players, games));
+  const needsBye = ranked.length % 2 === 1;
+
+  // Build a Map for O(1) player lookup by id
+  const playerMap = new Map<string, RankedPlayer>();
+  for (const p of ranked) {
+    playerMap.set(p.id, p);
+  }
+
+  if (!needsBye) {
+    // Even count: single bracket pass, no bye needed
+    const result = doBracketPass(ranked, games, playerMap, totalRounds);
+    if (result !== undefined) {
+      return {
+        byes: [],
+        pairings: result.map(([higher, lower]) => allocateColor(higher, lower)),
+      };
+    }
+
+    // Global fallback
     const globalResult = maxMatchingPair(ranked, games);
     return {
-      byes: needsBye
-        ? (() => {
-            const globalPairedIds = new Set(
-              globalResult.pairings.flatMap(([a, b]) => [a.id, b.id]),
-            );
-            const globalUnpaired = ranked.find(
-              (p) => !globalPairedIds.has(p.id),
-            );
-            return globalUnpaired === undefined
-              ? []
-              : [{ player: globalUnpaired.id }];
-          })()
-        : [],
+      byes: [],
       pairings: globalResult.pairings.map(([higher, lower]) =>
         allocateColor(higher, lower),
       ),
     };
   }
 
-  // Determine the bye recipient (odd tournament: one player left unpaired)
-  let byePlayer: RankedPlayer | undefined;
-  if (needsBye) {
-    const pairedIds = new Set(allPairings.flatMap(([a, b]) => [a.id, b.id]));
-    byePlayer = ranked.find((p) => !pairedIds.has(p.id));
+  // Odd count: try bye candidates in C5 (lowest score) then C9 (fewest unplayed rounds) order.
+  // This ensures the bye is assigned to the lowest-score eligible player
+  // for whom a valid pairing of the remaining players exists (FIDE C5).
+  const eligibleByeCandidates = ranked
+    .filter((p) => p.byeCount === 0)
+    .toSorted((a, b) => {
+      if (a.score !== b.score) return a.score - b.score; // C5: lowest score first
+      if (a.unplayedRounds !== b.unplayedRounds)
+        return a.unplayedRounds - b.unplayedRounds; // C9
+      return b.tpn - a.tpn; // highest TPN (lowest ranked) first as tiebreak
+    });
+
+  // If no eligible candidates (all have had byes), fall back to all players sorted the same way
+  const byeCandidates =
+    eligibleByeCandidates.length > 0
+      ? eligibleByeCandidates
+      : [...ranked].toSorted((a, b) => {
+          if (a.score !== b.score) return a.score - b.score;
+          return b.tpn - a.tpn;
+        });
+
+  for (const byeCandidate of byeCandidates) {
+    const remaining = ranked.filter((p) => p.id !== byeCandidate.id);
+    const result = doBracketPass(remaining, games, playerMap, totalRounds);
+    if (result !== undefined) {
+      return {
+        byes: [{ player: byeCandidate.id }],
+        pairings: result.map(([higher, lower]) => allocateColor(higher, lower)),
+      };
+    }
+
+    // Bracket pass failed for this bye candidate. Try global matching on
+    // the remaining even pool as a fallback — if all players can be paired
+    // globally, this bye assignment is still valid (C5 may require it).
+    const globalRemaining = maxMatchingPair(remaining, games);
+    const globalPairedCount = globalRemaining.pairings.length * 2;
+    if (globalPairedCount === remaining.length) {
+      return {
+        byes: [{ player: byeCandidate.id }],
+        pairings: globalRemaining.pairings.map(([higher, lower]) =>
+          allocateColor(higher, lower),
+        ),
+      };
+    }
   }
 
+  // Final fallback: global matching on entire pool
+  const globalResult = maxMatchingPair(ranked, games);
+  const globalPairedIds = new Set(
+    globalResult.pairings.flatMap(([a, b]) => [a.id, b.id]),
+  );
+  const globalUnpaired = ranked.find((p) => !globalPairedIds.has(p.id));
   return {
-    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
-    pairings: allPairings.map(([higher, lower]) =>
+    byes: globalUnpaired === undefined ? [] : [{ player: globalUnpaired.id }],
+    pairings: globalResult.pairings.map(([higher, lower]) =>
       allocateColor(higher, lower),
     ),
   };
