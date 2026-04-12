@@ -1,7 +1,7 @@
 # Swiss
 
 [![npm](https://img.shields.io/npm/v/@echecs/swiss)](https://www.npmjs.com/package/@echecs/swiss)
-[![Coverage](https://codecov.io/gh/mormubis/swiss/branch/main/graph/badge.svg)](https://codecov.io/gh/mormubis/swiss)
+[![Coverage](https://codecov.io/gh/echecsjs/swiss/branch/main/graph/badge.svg)](https://codecov.io/gh/echecsjs/swiss)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Swiss** is a TypeScript library for Swiss chess tournament pairing, following

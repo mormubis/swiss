@@ -10,7 +10,7 @@ See the root `AGENTS.md` for workspace-wide conventions (package manager,
 TypeScript settings, formatting, naming, testing, ESLint rules).
 
 **Backlog:** tracked in
-[GitHub Issues](https://github.com/mormubis/swiss/issues).
+[GitHub Issues](https://github.com/echecsjs/swiss/issues).
 
 ---
 

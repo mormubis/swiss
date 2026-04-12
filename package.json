@@ -1,7 +1,7 @@
 {
   "author": "Adrian de la Rosa <adrian@delarosab.me>",
   "bugs": {
-    "url": "https://github.com/mormubis/swiss/issues"
+    "url": "https://github.com/echecsjs/swiss/issues"
   },
   "description": "Swiss chess tournament pairings following FIDE rules. Implements Dutch, Dubov, Burstein, Lim, Double, and Team Swiss systems. Zero dependencies.",
   "devDependencies": {
@@ -63,7 +63,7 @@
     "README.md",
     "CHANGELOG.md"
   ],
-  "homepage": "https://github.com/mormubis/swiss#readme",
+  "homepage": "https://github.com/echecsjs/swiss#readme",
   "keywords": [
     "burstein",
     "chess",
@@ -87,7 +87,7 @@
   "name": "@echecs/swiss",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mormubis/swiss.git"
+    "url": "https://github.com/echecsjs/swiss.git"
   },
   "sideEffects": false,
   "scripts": {
