@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.3] - 2026-04-17
+
+### Fixed
+
+- Added top-level `types` field to `package.json` for TypeScript configs that
+  don't resolve types through `exports` conditions.
+
 ## [Unreleased]
 
 ### Changed
