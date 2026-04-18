@@ -74,6 +74,15 @@ describe('DynamicUint', () => {
       // both are zero
       expect(a.compareTo(b)).toBe(0);
     });
+
+    it('returns 0 for same value with different word counts', () => {
+      // [5, 0] (2 words) vs [5] (1 word) — numerically equal
+      const a = DynamicUint.zero(2);
+      a.or(5);
+      const b = DynamicUint.from(5);
+      expect(a.compareTo(b)).toBe(0);
+      expect(b.compareTo(a)).toBe(0);
+    });
   });
 
   describe('clone', () => {
@@ -207,6 +216,15 @@ describe('DynamicUint', () => {
       expect(n.compareTo(expected)).toBe(0);
     });
 
+    it('shifts with both wordShift and bitShift non-zero', () => {
+      // 1 << 35 = 0x8_0000_0000 (wordShift=1, bitShift=3)
+      const n = DynamicUint.zero(2);
+      n.or(1);
+      n.shiftLeft(35);
+      const expected = DynamicUint.from(0x8_00_00_00_00);
+      expect(n.compareTo(expected)).toBe(0);
+    });
+
     it('returns this for chaining', () => {
       const n = DynamicUint.from(1);
       expect(n.shiftLeft(1)).toBe(n);
@@ -225,6 +243,15 @@ describe('DynamicUint', () => {
       const n = DynamicUint.from(0x1_00_00_00_00);
       n.shiftRight(32);
       expect(n.compareTo(DynamicUint.from(1))).toBe(0);
+    });
+
+    it('shifts across word boundary with non-zero bit offset', () => {
+      // 0x6_0000_0000 >> 33 = 3 (wordShift=1, bitShift=1)
+      const n = DynamicUint.zero(2);
+      n.or(6); // word0 = 6
+      n.shiftGrow(32); // n = 0x6_0000_0000
+      n.shiftRight(33);
+      expect(n.compareTo(DynamicUint.from(3))).toBe(0);
     });
 
     it('shifts away all bits to zero', () => {

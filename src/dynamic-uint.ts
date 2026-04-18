@@ -4,6 +4,9 @@
  * Words are stored in little-endian order: word 0 is the least significant.
  * Each word is a 32-bit unsigned integer, matching JS bitwise operator width.
  *
+ * Note: `add` and `subtract` do NOT grow capacity — callers must pre-size
+ * via `shiftGrow` if overflow is possible.
+ *
  * @internal Not part of the public API.
  */
 class DynamicUint {
@@ -17,6 +20,12 @@ class DynamicUint {
     return this.#data.length;
   }
 
+  /**
+   * Adds `value` to this in place.
+   *
+   * When `value` is a `number` it must fit in 32 bits (0 – 0xFFFF_FFFF).
+   * Values larger than 0xFFFF_FFFF are silently truncated by `>>> 0`.
+   */
   add(value: number | DynamicUint): this {
     if (typeof value === 'number') {
       let carry = value >>> 0;
@@ -149,10 +158,6 @@ class DynamicUint {
         this.#data[index] = (lo | hi) >>> 0;
       }
     }
-    // Zero out low words that were vacated
-    for (let index = 0; index < Math.min(wordShift, length); index++) {
-      this.#data[index] = 0;
-    }
     return this;
   }
 
@@ -179,6 +184,12 @@ class DynamicUint {
     return this;
   }
 
+  /**
+   * Subtracts `value` from this in place.
+   *
+   * When `value` is a `number` it must fit in 32 bits (0 – 0xFFFF_FFFF).
+   * Values larger than 0xFFFF_FFFF are silently truncated by `>>> 0`.
+   */
   subtract(value: number | DynamicUint): this {
     if (typeof value === 'number') {
       let borrow = value >>> 0;
