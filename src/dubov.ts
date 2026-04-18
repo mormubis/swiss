@@ -1,4 +1,9 @@
-import { assignBye, assignColors, hasFaced, rankPlayers } from './utilities.js';
+import {
+  assignByeLegacy as assignBye,
+  assignColors,
+  hasFaced,
+  rankPlayers,
+} from './utilities.js';
 
 import type { Game, PairingResult, Player } from './types.js';
 

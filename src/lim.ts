@@ -1,10 +1,10 @@
 import {
-  assignBye,
+  assignByeLegacy as assignBye,
   colorHistory,
   colorPreference,
   hasFaced,
   rankPlayers,
-  scoreGroups,
+  playerScoreGroups as scoreGroups,
 } from './utilities.js';
 
 import type { Game, PairingResult, Player } from './types.js';

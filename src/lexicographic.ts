@@ -1,4 +1,9 @@
-import { byeScore, hasFaced, matchCount, scoreGroups } from './utilities.js';
+import {
+  byeScore,
+  hasFaced,
+  matchCount,
+  playerScoreGroups as scoreGroups,
+} from './utilities.js';
 
 import type { Game, Pairing, Player } from './types.js';
 
