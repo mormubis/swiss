@@ -211,13 +211,14 @@ function maxWeightMatching(
           const [iiRaw, jjRaw] = edges[kk]!;
           const jj = inblossom[jjRaw] === b ? iiRaw : jjRaw;
           const bj = inblossom[jj]!;
-          if (
-            bj !== b &&
-            label[bj] === 1 &&
-            (bestedgeto[bj] === -1 ||
-              slack(kk).compareTo(slack(bestedgeto[bj]!)) < 0)
-          )
-            bestedgeto[bj] = kk;
+          if (bj !== b && label[bj] === 1) {
+            const kkslack = slack(kk);
+            if (
+              bestedgeto[bj] === -1 ||
+              kkslack.compareTo(slack(bestedgeto[bj]!)) < 0
+            )
+              bestedgeto[bj] = kk;
+          }
         }
       blossombestedges[bvv] = undefined;
       bestedge[bvv] = -1;
@@ -226,9 +227,11 @@ function maxWeightMatching(
     for (const kk of bestedgeto) if (kk !== -1) bestList.push(kk);
     blossombestedges[b] = bestList;
     bestedge[b] = -1;
-    for (const kk of bestList)
-      if (bestedge[b] === -1 || slack(kk).compareTo(slack(bestedge[b]!)) < 0)
+    for (const kk of bestList) {
+      const kkslack = slack(kk);
+      if (bestedge[b] === -1 || kkslack.compareTo(slack(bestedge[b]!)) < 0)
         bestedge[b] = kk;
+    }
   }
 
   function expandBlossom(b: number, endstage: boolean): void {
@@ -408,7 +411,7 @@ function maxWeightMatching(
           const k = p >> 1,
             w = endpoint[p]!;
           if (inblossom[v] === inblossom[w]) continue;
-          let kslack: DynamicUint = ZERO.clone();
+          let kslack: DynamicUint | undefined;
           if (!allowedge[k]) {
             kslack = slack(k);
             if (kslack.compareTo(ZERO) <= 0) allowedge[k] = true;
@@ -431,12 +434,12 @@ function maxWeightMatching(
             const bb = inblossom[v]!;
             if (
               bestedge[bb] === -1 ||
-              kslack.compareTo(slack(bestedge[bb]!)) < 0
+              kslack!.compareTo(slack(bestedge[bb]!)) < 0
             )
               bestedge[bb] = k;
           } else if (
             label[w] === 0 &&
-            (bestedge[w] === -1 || kslack.compareTo(slack(bestedge[w]!)) < 0)
+            (bestedge[w] === -1 || kslack!.compareTo(slack(bestedge[w]!)) < 0)
           )
             bestedge[w] = k;
         }
