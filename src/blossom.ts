@@ -618,6 +618,64 @@ function maxWeightMatching(
     }
   }
 
+  /**
+   * Process the queue of S-labelled vertices, scanning their neighbors
+   * to grow alternating trees.
+   *
+   * For each tight edge from an S-vertex to a neighbor:
+   * - Free neighbor → label it T (and its mate becomes S).
+   * - S-neighbor in same tree → odd cycle found → contract into blossom.
+   * - S-neighbor in different tree → augmenting path → augment matching.
+   *
+   * For non-tight edges, track the best (minimum slack) edge to each
+   * S-blossom or free vertex for later dual updates.
+   *
+   * @returns true if an augmenting path was found (matching was augmented).
+   */
+  function scanNeighbors(): boolean {
+    while (queue.length > 0) {
+      const vertex = queue.pop()!;
+      for (const neighborEndpoint of neighborEdges[vertex]!) {
+        const edgeIndex = neighborEndpoint >> 1,
+          neighbor = endpoints[neighborEndpoint]!;
+        if (vertexTopBlossom[vertex] === vertexTopBlossom[neighbor]) continue;
+        let edgeSlack: DynamicUint | undefined;
+        if (!edgeTight[edgeIndex]) {
+          edgeSlack = slack(edgeIndex);
+          if (edgeSlack.compareTo(ZERO) <= 0) edgeTight[edgeIndex] = true;
+        }
+        if (edgeTight[edgeIndex]) {
+          if (labels[vertexTopBlossom[neighbor]!] === 0)
+            assignLabel(neighbor, 2, neighborEndpoint ^ 1);
+          else if (labels[vertexTopBlossom[neighbor]!] === 1) {
+            const base = scanBlossom(vertex, neighbor);
+            if (base >= 0) addBlossom(base, edgeIndex);
+            else {
+              augmentMatching(edgeIndex);
+              return true;
+            }
+          } else if (labels[neighbor] === 0) {
+            labels[neighbor] = 2;
+            labelEndpoints[neighbor] = neighborEndpoint ^ 1;
+          }
+        } else if (labels[vertexTopBlossom[neighbor]!] === 1) {
+          const blossomIndex = vertexTopBlossom[vertex]!;
+          if (
+            bestEdge[blossomIndex] === -1 ||
+            edgeSlack!.compareTo(slack(bestEdge[blossomIndex]!)) < 0
+          )
+            bestEdge[blossomIndex] = edgeIndex;
+        } else if (
+          labels[neighbor] === 0 &&
+          (bestEdge[neighbor] === -1 ||
+            edgeSlack!.compareTo(slack(bestEdge[neighbor]!)) < 0)
+        )
+          bestEdge[neighbor] = edgeIndex;
+      }
+    }
+    return false;
+  }
+
   for (let stage = 0; stage < vertexCount; stage++) {
     labels.fill(0);
     bestEdge.fill(-1);
@@ -632,50 +690,10 @@ function maxWeightMatching(
     for (let v = 0; v < vertexCount; v++)
       if (match[v] === -1 && labels[vertexTopBlossom[v]!] === 0)
         assignLabel(v, 1, -1);
-    let augmented = false;
+    let augmented: boolean;
 
     while (true) {
-      while (queue.length > 0 && !augmented) {
-        const vertex = queue.pop()!;
-        for (const neighborEndpoint of neighborEdges[vertex]!) {
-          const edgeIndex = neighborEndpoint >> 1,
-            neighbor = endpoints[neighborEndpoint]!;
-          if (vertexTopBlossom[vertex] === vertexTopBlossom[neighbor]) continue;
-          let edgeSlack: DynamicUint | undefined;
-          if (!edgeTight[edgeIndex]) {
-            edgeSlack = slack(edgeIndex);
-            if (edgeSlack.compareTo(ZERO) <= 0) edgeTight[edgeIndex] = true;
-          }
-          if (edgeTight[edgeIndex]) {
-            if (labels[vertexTopBlossom[neighbor]!] === 0)
-              assignLabel(neighbor, 2, neighborEndpoint ^ 1);
-            else if (labels[vertexTopBlossom[neighbor]!] === 1) {
-              const base = scanBlossom(vertex, neighbor);
-              if (base >= 0) addBlossom(base, edgeIndex);
-              else {
-                augmentMatching(edgeIndex);
-                augmented = true;
-                break;
-              }
-            } else if (labels[neighbor] === 0) {
-              labels[neighbor] = 2;
-              labelEndpoints[neighbor] = neighborEndpoint ^ 1;
-            }
-          } else if (labels[vertexTopBlossom[neighbor]!] === 1) {
-            const blossomIndex = vertexTopBlossom[vertex]!;
-            if (
-              bestEdge[blossomIndex] === -1 ||
-              edgeSlack!.compareTo(slack(bestEdge[blossomIndex]!)) < 0
-            )
-              bestEdge[blossomIndex] = edgeIndex;
-          } else if (
-            labels[neighbor] === 0 &&
-            (bestEdge[neighbor] === -1 ||
-              edgeSlack!.compareTo(slack(bestEdge[neighbor]!)) < 0)
-          )
-            bestEdge[neighbor] = edgeIndex;
-        }
-      }
+      augmented = scanNeighbors();
       if (augmented) break;
 
       let deltaType = -1,
