@@ -229,12 +229,21 @@ function maxWeightMatching(
   // `queue`: S-labelled vertices whose neighbors have not yet been scanned.
   let queue: number[] = [];
 
+  /**
+   * Compute the slack of edge `edgeIdx`: dual[u] + dual[v] - 2*weight.
+   * An edge is "tight" (eligible for matching) when its slack is zero.
+   */
   function slack(edgeIndex: number): DynamicUint {
     const [u, v, weight] = edges[edgeIndex]!;
     // slack = dual[u] + dual[v] - 2*w
     return dual[u]!.clone().add(dual[v]!).subtract(weight.clone().shiftGrow(1));
   }
 
+  /**
+   * Yield all vertices (leaf nodes) contained in blossom `node`.
+   * If `node` is a vertex (< vertexCount), yields just that vertex.
+   * Otherwise, recursively descends through the blossom's children.
+   */
   function* blossomLeaves(node: number): Generator<number> {
     if (node < vertexCount) yield node;
     else
@@ -244,6 +253,14 @@ function maxWeightMatching(
       }
   }
 
+  /**
+   * Assign label `labelType` (1=S or 2=T) to vertex `vertex` and its
+   * top-level blossom, recording the endpoint that reached it.
+   *
+   * - S-label (1): All vertices in the blossom are added to the scan queue.
+   * - T-label (2): The base vertex's mate is recursively labelled S,
+   *   extending the alternating tree by one matched edge.
+   */
   function assignLabel(
     vertex: number,
     labelType: number,
@@ -260,6 +277,19 @@ function maxWeightMatching(
     }
   }
 
+  /**
+   * Trace back from two S-vertices (`vertexA` and `vertexB`) toward the
+   * root of their alternating trees. If they share a common ancestor
+   * (base vertex), a new blossom has been found — return that base.
+   * If the paths reach two different roots, an augmenting path exists —
+   * return -1.
+   *
+   * Uses label bit 4 as a visited marker (label=5 means "S + visited").
+   * Restores labels to S (1) before returning.
+   *
+   * The two paths are interleaved: advance one cursor, then swap them,
+   * so both paths are explored in lockstep.
+   */
   function scanBlossom(vertexA: number, vertexB: number): number {
     const path: number[] = [];
     let base = -1,
