@@ -594,6 +594,18 @@ function maxWeightMatching(
     blossomBase[blossom] = blossomBase[children[index]!]!;
   }
 
+  /**
+   * Augment the matching along the augmenting path that passes through
+   * edge `edgeIdx`.
+   *
+   * Starting from each endpoint of the edge, trace back through the
+   * alternating tree to the root (unmatched vertex), flipping
+   * matched/unmatched edges along the way. If a vertex is inside a
+   * non-trivial blossom, recursively augment that blossom's internal
+   * matching too.
+   *
+   * After this function, the matching size has increased by one.
+   */
   function augmentMatching(edgeIndex: number): void {
     const [vertexU, vertexW] = edges[edgeIndex]!;
     for (const [startVertex, startEndpoint] of [
@@ -850,7 +862,14 @@ function maxWeightMatching(
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Main loop: at most vertexCount stages, each finding one augmenting
+  // path and increasing the matching size by one.
+  // ══════════════════════════════════════════════════════════════════════
   for (let stage = 0; stage < vertexCount; stage++) {
+    // ── Stage initialization ──
+    // Reset all labels, best-edge tracking, and tightness flags.
+    // Label all unmatched vertices as S (label=1) to seed alternating trees.
     labels.fill(0);
     bestEdge.fill(-1);
     for (
@@ -866,6 +885,7 @@ function maxWeightMatching(
         assignLabel(v, 1, -1);
     let augmented: boolean;
 
+    // ── Inner loop: alternate between scanning and dual updates ──
     while (true) {
       augmented = scanNeighbors();
       if (augmented) break;
@@ -878,8 +898,13 @@ function maxWeightMatching(
       if (deltaType === 1) break;
     }
 
+    // No augmentation possible in this stage → optimal matching found.
     if (!augmented) break;
 
+    // ── End-of-stage cleanup ──
+    // Expand any top-level S-blossoms whose dual variable has reached zero.
+    // These blossoms are no longer needed and their vertices should be
+    // independent for the next stage.
     for (
       let blossomIndex = vertexCount;
       blossomIndex < 2 * vertexCount;
@@ -895,6 +920,9 @@ function maxWeightMatching(
     }
   }
 
+  // ── Build result array ──
+  // Convert the internal endpoint-based matching to a simple vertex→vertex
+  // mapping. result[v] = the vertex matched to v, or -1 if unmatched.
   const result: number[] = Array.from({ length: vertexCount }, () => -1);
   for (let v = 0; v < vertexCount; v++)
     if (match[v] !== -1) result[v] = endpoints[match[v]!]!;
