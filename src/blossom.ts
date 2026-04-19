@@ -1,13 +1,74 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /**
- * Maximum weight matching on general graphs using Edmonds' blossom algorithm.
+ * Maximum-weight matching on general graphs — Edmonds' blossom algorithm.
  *
  * Faithful port of mwmatching.py by Joris van Rantwijk (2008), based on:
  *   "Efficient Algorithms for Finding Maximum Matching in Graphs"
  *   — Zvi Galil, ACM Computing Surveys, 1986.
  *
- * Uses DynamicUint for arbitrary-precision non-negative weights.
+ * ## Algorithm overview
  *
+ * A *matching* is a set of vertex-disjoint edges. A *maximum-weight matching*
+ * maximises the sum of edge weights. Edmonds' algorithm finds one in O(n³).
+ *
+ * Key concepts:
+ *
+ * - **Augmenting path:** A path that starts and ends at unmatched vertices,
+ *   alternating between non-matching and matching edges. Flipping all edges
+ *   along such a path increases the matching size by one.
+ *
+ * - **Blossom:** An odd-length cycle where every other edge is in the
+ *   matching. Blossoms are contracted into single "super-vertices" so the
+ *   algorithm can find augmenting paths through odd cycles. Blossoms can nest
+ *   (a blossom may contain other blossoms as children).
+ *
+ * - **Dual variables:** Each vertex and each non-trivial blossom carries a
+ *   dual variable. The algorithm maintains *complementary slackness*: an edge
+ *   (u,v) can only be in the matching if `dual[u] + dual[v] == weight(u,v)`
+ *   (i.e. the edge is "tight"). Dual updates make new edges tight, driving
+ *   the search forward.
+ *
+ * - **Labels (S / T):** During each stage the algorithm grows alternating
+ *   trees from unmatched vertices. Vertices reachable by an even-length
+ *   alternating path are labelled S (label=1); their matched partners are
+ *   labelled T (label=2). Unlabelled vertices (label=0) are free.
+ *
+ * ## Main loop structure
+ *
+ * The algorithm runs at most `vertexCount` *stages*. Each stage attempts to
+ * find one augmenting path and increase the matching size by one:
+ *
+ * 1. **Initialise labels:** Label all unmatched vertices as S.
+ * 2. **Grow alternating trees (neighbor scan):** Process S-vertices from a
+ *    queue. For each tight edge to a neighbor:
+ *    - Free vertex → label it T, then label its mate S (tree grows).
+ *    - S-vertex in same tree → found an odd cycle → contract into a blossom.
+ *    - S-vertex in different tree → found an augmenting path → augment.
+ * 3. **Dual variable update:** If the queue is empty and no augmentation was
+ *    found, compute the minimum adjustment (delta) that makes a new edge
+ *    tight or allows a blossom to expand. There are four delta types:
+ *    - Type 1: Minimum vertex dual (algorithm terminates).
+ *    - Type 2: Edge from S-vertex to free vertex becomes tight.
+ *    - Type 3: Edge between two S-blossoms becomes tight (halved slack).
+ *    - Type 4: T-blossom dual reaches zero (expand the blossom).
+ * 4. **Act on delta:** Make the edge tight / expand the blossom / terminate.
+ * 5. **End-of-stage cleanup:** Expand any S-blossoms with zero dual.
+ *
+ * ## Endpoint encoding
+ *
+ * Edges are stored in a flat array where edge k has its two endpoint vertex
+ * indices at positions `2k` and `2k+1`. The XOR trick `p ^ 1` flips between
+ * the two endpoints of the same edge. This compact encoding avoids storing
+ * separate "source" and "target" for each edge.
+ *
+ * ## Node indexing
+ *
+ * Vertices are numbered `0..vertexCount-1`. Blossoms are numbered
+ * `vertexCount..2*vertexCount-1`. Arrays like `labels`, `dual`, `bestEdge`
+ * are sized `2*vertexCount` to accommodate both vertices and blossoms in a
+ * single flat array.
+ *
+ * Uses DynamicUint for arbitrary-precision non-negative weights.
  * Complexity: O(n³) where n is the number of vertices.
  *
  * The algorithm accesses pre-sized arrays by index throughout. All accesses
