@@ -27,6 +27,7 @@ import {
   scoreGroups,
 } from './utilities.js';
 
+import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
 import type { ColorRule, PlayerState } from './utilities.js';
 
@@ -594,11 +595,16 @@ function finalizePair(
 // Main pair function
 // ---------------------------------------------------------------------------
 
-function pair(players: Player[], games: Game[][]): PairingResult {
+function pair(
+  players: Player[],
+  games: Game[][],
+  options?: PairOptions,
+): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
 
+  const trace = options?.trace;
   const playedRounds = games.length;
   const expectedRounds = playedRounds + 1;
   const states = buildPlayerStates(players, games);
@@ -639,7 +645,37 @@ function pair(players: Player[], games: Game[][]): PairingResult {
       }
     }
 
-    const m0 = maxWeightMatching(feasEdges, true);
+    if (trace) {
+      trace({
+        edgeCount: feasEdges.length,
+        phase: 'feasibility',
+        system: 'dutch',
+        type: 'pairing:blossom-invoked',
+        vertexCount: n,
+      });
+    }
+    const m0 = maxWeightMatching(feasEdges, true, trace);
+    if (trace) {
+      const pairs: [string, string][] = [];
+      let unmatchedCount = 0;
+      for (const [k, element] of m0.entries()) {
+        const mk = element ?? -1;
+        if (mk > k) {
+          const aState = sorted[k];
+          const bState = sorted[mk];
+          if (aState && bState) pairs.push([aState.id, bState.id]);
+        } else if (mk === -1 || mk === k) {
+          unmatchedCount++;
+        }
+      }
+      trace({
+        pairs,
+        phase: 'feasibility',
+        system: 'dutch',
+        type: 'pairing:blossom-result',
+        unmatchedCount,
+      });
+    }
 
     for (let index = 0; index < n; index++) {
       const mi = m0[index] ?? -1;
@@ -685,6 +721,14 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     byeState = assignBye(sorted, games, dutchByeTiebreak);
   }
   const byeId = byeState?.id;
+  if (trace && byeId !== undefined) {
+    trace({
+      playerId: byeId,
+      reason: 'lowest-score-no-prior-bye',
+      system: 'dutch',
+      type: 'pairing:bye-assigned',
+    });
+  }
   const pairedSorted =
     byeId === undefined ? sorted : sorted.filter((s) => s.id !== byeId);
   const np = pairedSorted.length;
@@ -700,6 +744,13 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   // Phase 3: Score group membership
   // -------------------------------------------------------------------------
   const sgMap = scoreGroups(pairedSorted);
+  if (trace) {
+    const groups: { playerIds: string[]; score: number }[] = [];
+    for (const [score, members] of sgMap) {
+      groups.push({ playerIds: members.map((m) => m.id), score });
+    }
+    trace({ groups, system: 'dutch', type: 'pairing:score-groups' });
+  }
   const scoreLevels = [...sgMap.keys()].toSorted((a, b) => b - a); // desc
 
   // Score groups as arrays of indices into pairedSorted, ordered by score desc
@@ -750,6 +801,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   // scoreGroupBeginVertex tracks the global vertex index of start of current bracket's score group
   let scoreGroupBeginVertex = 0; // starts at 0 (first group begins at 0 in pairedSorted)
 
+  let currentPhase = 'bracket';
   let bracketIterCount = 0;
   while (playersByIndex.length > 1 || sgIterator < scoreGroupArrays.length) {
     if (++bracketIterCount > np * 10) break; // safety guard: prevents infinite loops
@@ -782,6 +834,21 @@ function pair(players: Player[], games: Game[][]): PairingResult {
       nextScoreGroupBegin = playersByIndex.length;
       // nextScoreGroupBeginVertex: ensure it's > all player global indices
       nextScoreGroupBeginVertex = np; // np = number of paired players = max global index + 1
+    }
+
+    if (trace) {
+      const bracketScore =
+        pairedSorted[playersByIndex[scoreGroupBegin] ?? 0]?.score ?? 0;
+      const mdpIds = playersByIndex
+        .slice(0, scoreGroupBegin)
+        .map((gi) => pairedSorted[gi]?.id ?? '');
+      const playerIds = playersByIndex.map((gi) => pairedSorted[gi]?.id ?? '');
+      trace({
+        bracketScore,
+        mdpIds,
+        playerIds,
+        type: 'dutch:bracket-enter',
+      });
     }
 
     // Compute baseEdgeWeights for all pairs involving the current/next bracket.
@@ -898,7 +965,16 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     const runBlossom = (): number[] => {
       const edges = buildCurrentEdges();
       if (edges.length === 0) return Array.from({ length: np }, () => -1);
-      const result = maxWeightMatching(edges, true);
+      if (trace) {
+        trace({
+          edgeCount: edges.length,
+          phase: currentPhase,
+          system: 'dutch',
+          type: 'pairing:blossom-invoked',
+          vertexCount: playersByIndex.length,
+        });
+      }
+      const result = maxWeightMatching(edges, true, trace);
       // Expand to full np size
       const full = Array.from({ length: np }, () => -1);
       for (const [k, element] of result.entries()) {
@@ -906,6 +982,27 @@ function pair(players: Player[], games: Game[][]): PairingResult {
           // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           full[k] = element!;
         }
+      }
+      if (trace) {
+        const pairs: [string, string][] = [];
+        let unmatchedCount = 0;
+        for (const [k, element] of full.entries()) {
+          const mk = element ?? -1;
+          if (mk > k) {
+            const aState = pairedSorted[k];
+            const bState = pairedSorted[mk];
+            if (aState && bState) pairs.push([aState.id, bState.id]);
+          } else if (mk === -1 || mk === k) {
+            unmatchedCount++;
+          }
+        }
+        trace({
+          pairs,
+          phase: currentPhase,
+          system: 'dutch',
+          type: 'pairing:blossom-result',
+          unmatchedCount,
+        });
       }
       return full;
     };
@@ -957,6 +1054,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     };
 
     // Run initial blossom
+    currentPhase = 'bracket-initial';
     let stableMatching = runBlossom();
 
     // -----------------------------------------------------------------------
@@ -1039,6 +1137,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
             }
           }
 
+          currentPhase = 'bracket-mdp';
           stableMatching = runBlossom();
         }
 
@@ -1107,6 +1206,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
         }
       }
 
+      currentPhase = 'bracket-mdp-finalize';
       stableMatching = runBlossom();
 
       // Finalize the pairing
@@ -1121,6 +1221,15 @@ function pair(players: Player[], games: Game[][]): PairingResult {
           playersByIndex,
         );
         matchedPairs.push([playerGlobal, matchGlobal]);
+        if (trace) {
+          trace({
+            phase: currentPhase,
+            playerA: pairedSorted[playerGlobal]?.id ?? '',
+            playerB: pairedSorted[matchGlobal]?.id ?? '',
+            system: 'dutch',
+            type: 'pairing:pair-finalized',
+          });
+        }
       }
     }
 
@@ -1129,6 +1238,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     // -----------------------------------------------------------------------
 
     // Re-run blossom after MDP finalizations
+    currentPhase = 'bracket-remainder';
     stableMatching = runBlossom();
 
     // remainder: local indices of players in scoreGroupBegin..nextScoreGroupBegin
@@ -1196,6 +1306,15 @@ function pair(players: Player[], games: Game[][]): PairingResult {
           matched[playerGlobal] = true;
           matched[matchG] = true;
           matchedPairs.push([playerGlobal, matchG]);
+          if (trace) {
+            trace({
+              phase: currentPhase,
+              playerA: pairedSorted[playerGlobal]?.id ?? '',
+              playerB: pairedSorted[matchG]?.id ?? '',
+              system: 'dutch',
+              type: 'pairing:pair-finalized',
+            });
+          }
         }
       }
     } else {
@@ -1226,6 +1345,7 @@ function pair(players: Player[], games: Game[][]): PairingResult {
         }
       }
 
+      currentPhase = 'bracket-ordering';
       stableMatching = runBlossom();
 
       // Finalize all within-bracket upper-group pairs from the ordering blossom
@@ -1244,6 +1364,15 @@ function pair(players: Player[], games: Game[][]): PairingResult {
           matched[playerGlobal] = true;
           matched[matchG] = true;
           matchedPairs.push([playerGlobal, matchG]);
+          if (trace) {
+            trace({
+              phase: currentPhase,
+              playerA: pairedSorted[playerGlobal]?.id ?? '',
+              playerB: pairedSorted[matchG]?.id ?? '',
+              system: 'dutch',
+              type: 'pairing:pair-finalized',
+            });
+          }
         }
       }
     }
@@ -1347,7 +1476,44 @@ function pair(players: Player[], games: Game[][]): PairingResult {
       }
     }
     if (fallbackEdges.length > 0) {
-      const fallbackMatch = maxWeightMatching(fallbackEdges, true);
+      if (trace) {
+        trace({
+          phase: 'bracket-fallback',
+          remainingCount: playersByIndex.length,
+          type: 'dutch:fallback',
+        });
+      }
+      if (trace) {
+        trace({
+          edgeCount: fallbackEdges.length,
+          phase: 'bracket-fallback',
+          system: 'dutch',
+          type: 'pairing:blossom-invoked',
+          vertexCount: playersByIndex.length,
+        });
+      }
+      const fallbackMatch = maxWeightMatching(fallbackEdges, true, trace);
+      if (trace) {
+        const pairs: [string, string][] = [];
+        let unmatchedCount = 0;
+        for (const [k, element] of fallbackMatch.entries()) {
+          const mk = element ?? -1;
+          if (mk > k) {
+            const aState = pairedSorted[k];
+            const bState = pairedSorted[mk];
+            if (aState && bState) pairs.push([aState.id, bState.id]);
+          } else if (mk === -1 || mk === k) {
+            unmatchedCount++;
+          }
+        }
+        trace({
+          pairs,
+          phase: 'bracket-fallback',
+          system: 'dutch',
+          type: 'pairing:blossom-result',
+          unmatchedCount,
+        });
+      }
       const seen = new Set<number>();
       for (const [k, element] of fallbackMatch.entries()) {
         const mk = element ?? -1;
@@ -1402,7 +1568,44 @@ function pair(players: Player[], games: Game[][]): PairingResult {
       }
     }
 
-    const globalMatch = maxWeightMatching(globalEdges, true);
+    if (trace) {
+      trace({
+        phase: 'global-fallback',
+        remainingCount: np,
+        type: 'dutch:fallback',
+      });
+    }
+    if (trace) {
+      trace({
+        edgeCount: globalEdges.length,
+        phase: 'global-fallback',
+        system: 'dutch',
+        type: 'pairing:blossom-invoked',
+        vertexCount: np,
+      });
+    }
+    const globalMatch = maxWeightMatching(globalEdges, true, trace);
+    if (trace) {
+      const pairs: [string, string][] = [];
+      let unmatchedCount = 0;
+      for (const [k, element] of globalMatch.entries()) {
+        const mk = element ?? -1;
+        if (mk > k) {
+          const aState = pairedSorted[k];
+          const bState = pairedSorted[mk];
+          if (aState && bState) pairs.push([aState.id, bState.id]);
+        } else if (mk === -1 || mk === k) {
+          unmatchedCount++;
+        }
+      }
+      trace({
+        pairs,
+        phase: 'global-fallback',
+        system: 'dutch',
+        type: 'pairing:blossom-result',
+        unmatchedCount,
+      });
+    }
     const seenGlobal = new Set<number>();
     for (let k = 0; k < np; k++) {
       if (seenGlobal.has(k)) continue;
@@ -1429,6 +1632,18 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   const pairings = result.map(([a, b]) =>
     allocateColor(a, b, DUTCH_COLOR_RULES, dutchRankCompare),
   );
+
+  if (trace) {
+    for (const p of pairings) {
+      trace({
+        black: p.black,
+        rule: 'dutch-article-5.2',
+        system: 'dutch',
+        type: 'pairing:color-allocated',
+        white: p.white,
+      });
+    }
+  }
 
   return {
     byes: byeId === undefined ? [] : [{ player: byeId }],
