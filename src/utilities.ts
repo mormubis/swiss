@@ -1,6 +1,290 @@
+/**
+ * @internal
+ * Shared utilities for all FIDE Swiss pairing systems.
+ * Provides a precomputed PlayerState struct and related helper functions.
+ */
 import type { FloatKind, Game, Player } from './types.js';
 
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
 type Color = 'black' | 'white';
+
+type ColorRule = (
+  hrp: PlayerState,
+  opponent: PlayerState,
+) => 'continue' | 'hrp-black' | 'hrp-white';
+
+interface PlayerState {
+  byeCount: number;
+  colorDiff: number;
+  colorHistory: ('black' | 'white' | undefined)[];
+  floatHistory: FloatKind[];
+  id: string;
+  opponents: Set<string>;
+  preferenceStrength: 'absolute' | 'mild' | 'none' | 'strong';
+  preferredColor: 'black' | 'white' | undefined;
+  score: number;
+  tpn: number;
+  unplayedRounds: number;
+}
+
+// ---------------------------------------------------------------------------
+// New precomputed PlayerState API
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds all PlayerState objects from the player list and game history.
+ * All per-player data is computed once and cached.
+ */
+function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
+  const roundCount = games.length;
+
+  // Precompute cumulative score table: cumulativeScore[roundIndex] maps
+  // player id → score BEFORE that round.
+  const cumulativeScore: Map<string, number>[] = [];
+  const runningScoreMap = new Map<string, number>();
+
+  for (const round of games) {
+    cumulativeScore.push(new Map(runningScoreMap));
+    for (const game of round) {
+      // Skip byes (black === '')
+      if (game.black === '') continue;
+      runningScoreMap.set(
+        game.white,
+        (runningScoreMap.get(game.white) ?? 0) + game.result,
+      );
+      runningScoreMap.set(
+        game.black,
+        (runningScoreMap.get(game.black) ?? 0) + (1 - game.result),
+      );
+    }
+  }
+
+  return players.map((player, index) => {
+    const id = player.id;
+
+    let score = 0;
+    const opponents = new Set<string>();
+    const colorHistory: ('black' | 'white' | undefined)[] = [];
+    let byeCount = 0;
+    let unplayedRounds = 0;
+    const floatHistory: FloatKind[] = [];
+
+    for (let roundIndex = 0; roundIndex < roundCount; roundIndex++) {
+      const round = games[roundIndex] as Game[];
+      const game = round.find((g) => g.white === id || g.black === id);
+
+      if (game === undefined) {
+        colorHistory.push(undefined);
+        floatHistory.push(undefined);
+        unplayedRounds++;
+        continue;
+      }
+
+      // Bye sentinel: black === ''
+      if (game.black === '') {
+        byeCount++;
+        colorHistory.push(undefined);
+        floatHistory.push('down');
+        continue;
+      }
+
+      // Real game
+      const isWhite = game.white === id;
+      colorHistory.push(isWhite ? 'white' : 'black');
+      score += isWhite ? game.result : 1 - game.result;
+      opponents.add(isWhite ? game.black : game.white);
+
+      // Float status: compare scores before this round
+      const opponentId = isWhite ? game.black : game.white;
+      const scoresBeforeRound = cumulativeScore[roundIndex];
+      const playerScoreBefore = scoresBeforeRound?.get(id) ?? 0;
+      const opponentScoreBefore = scoresBeforeRound?.get(opponentId) ?? 0;
+
+      if (playerScoreBefore > opponentScoreBefore) {
+        floatHistory.push('down');
+      } else if (playerScoreBefore < opponentScoreBefore) {
+        floatHistory.push('up');
+      } else {
+        floatHistory.push(undefined);
+      }
+    }
+
+    // colorDiff: whites - blacks
+    let whites = 0;
+    let blacks = 0;
+    for (const c of colorHistory) {
+      if (c === 'white') whites++;
+      else if (c === 'black') blacks++;
+    }
+    const colorDiff = whites - blacks;
+
+    // preferenceStrength
+    const nonUndefinedColors = colorHistory.filter(
+      (c): c is 'black' | 'white' => c !== undefined,
+    );
+    const hasHistory = nonUndefinedColors.length > 0;
+    const lastTwo = nonUndefinedColors.slice(-2);
+
+    let preferenceStrength: PlayerState['preferenceStrength'];
+    if (!hasHistory) {
+      preferenceStrength = 'none';
+    } else if (
+      Math.abs(colorDiff) > 1 ||
+      (lastTwo.length === 2 && lastTwo[0] === lastTwo[1])
+    ) {
+      preferenceStrength = 'absolute';
+    } else if (Math.abs(colorDiff) === 1) {
+      preferenceStrength = 'strong';
+    } else {
+      // colorDiff === 0, has history
+      preferenceStrength = 'mild';
+    }
+
+    // preferredColor
+    let preferredColor: 'black' | 'white' | undefined;
+    if (!hasHistory) {
+      preferredColor = undefined;
+    } else if (colorDiff > 0) {
+      // more whites → prefer black
+      preferredColor = 'black';
+    } else if (colorDiff < 0) {
+      // more blacks → prefer white
+      preferredColor = 'white';
+    } else {
+      // colorDiff === 0: prefer opposite of last color played
+      const lastColor = nonUndefinedColors.at(-1);
+      if (lastColor === 'white') {
+        preferredColor = 'black';
+      } else if (lastColor === 'black') {
+        preferredColor = 'white';
+      } else {
+        preferredColor = undefined;
+      }
+    }
+
+    return {
+      byeCount,
+      colorDiff,
+      colorHistory,
+      floatHistory,
+      id,
+      opponents,
+      preferenceStrength,
+      preferredColor,
+      score,
+      tpn: index + 1,
+      unplayedRounds,
+    };
+  });
+}
+
+/**
+ * Returns a Map with keys = scores sorted descending,
+ * values = PlayerState arrays sorted by TPN ascending within each group.
+ */
+function scoreGroups(states: PlayerState[]): Map<number, PlayerState[]> {
+  const groups = new Map<number, PlayerState[]>();
+  for (const state of states) {
+    const group = groups.get(state.score) ?? [];
+    group.push(state);
+    groups.set(state.score, group);
+  }
+
+  // Sort each group by TPN ascending
+  // Return map with keys sorted descending; sort groups by TPN ascending
+  return new Map(
+    [...groups.entries()]
+      .toSorted(([a], [b]) => b - a)
+      .map(([k, v]) => [k, v.toSorted((a, b) => a.tpn - b.tpn)]),
+  );
+}
+
+/**
+ * Assigns the bye per FIDE basic rules.
+ * Returns the selected player state, or undefined if player count is even.
+ *
+ * 1. If player count is even, return undefined.
+ * 2. Filter to players with byeCount === 0 (eligible). If none, use all.
+ * 3. Among eligible, find those with the lowest score.
+ * 4. If tied, use the tiebreak comparator.
+ */
+function assignBye(
+  states: PlayerState[],
+  _games: Game[][],
+  tiebreak: (a: PlayerState, b: PlayerState) => number,
+): PlayerState | undefined {
+  if (states.length % 2 === 0) {
+    return undefined;
+  }
+
+  const eligible = states.filter((s) => s.byeCount === 0);
+  const pool = eligible.length > 0 ? eligible : states;
+
+  const minScore = Math.min(...pool.map((s) => s.score));
+  const lowestScored = pool.filter((s) => s.score === minScore);
+
+  if (lowestScored.length === 1) {
+    return lowestScored[0];
+  }
+
+  return lowestScored.toSorted(tiebreak)[0];
+}
+
+/**
+ * Color allocation engine.
+ *
+ * Determines the Higher-Ranked Player (HRP): higher score wins; if tied,
+ * use rankCompare (negative return = first arg ranks higher).
+ * Walks the rules array until one returns a decision.
+ * Fallback: HRP gets white.
+ */
+function allocateColor(
+  a: PlayerState,
+  b: PlayerState,
+  rules: ColorRule[],
+  rankCompare: (x: PlayerState, y: PlayerState) => number,
+): { black: string; white: string } {
+  let hrp: PlayerState;
+  let lrp: PlayerState;
+
+  if (a.score > b.score) {
+    hrp = a;
+    lrp = b;
+  } else if (b.score > a.score) {
+    hrp = b;
+    lrp = a;
+  } else {
+    const cmp = rankCompare(a, b);
+    if (cmp <= 0) {
+      hrp = a;
+      lrp = b;
+    } else {
+      hrp = b;
+      lrp = a;
+    }
+  }
+
+  for (const rule of rules) {
+    const decision = rule(hrp, lrp);
+    if (decision === 'hrp-white') {
+      return { black: lrp.id, white: hrp.id };
+    }
+    if (decision === 'hrp-black') {
+      return { black: hrp.id, white: lrp.id };
+    }
+  }
+
+  // Fallback: HRP gets white
+  return { black: lrp.id, white: hrp.id };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy API — kept for backward compatibility with modules not yet migrated
+// to the PlayerState-based API. These will be removed in tasks 5–11.
+// ---------------------------------------------------------------------------
 
 function gamesForPlayer(player: string, games: Game[][]): Game[] {
   return games.flat().filter((g) => g.white === player || g.black === player);
@@ -9,6 +293,8 @@ function gamesForPlayer(player: string, games: Game[][]): Game[] {
 function score(player: string, games: Game[][]): number {
   let sum = 0;
   for (const g of gamesForPlayer(player, games)) {
+    // Skip byes (black === '' or black === white sentinel)
+    if (g.black === '' || g.black === g.white) continue;
     sum += g.white === player ? g.result : 1 - g.result;
   }
   return sum;
@@ -51,7 +337,11 @@ function colorPreference(player: string, games: Game[][]): number {
   return diff;
 }
 
-function scoreGroups(
+/**
+ * Returns score groups for a list of players (legacy, Player-based).
+ * Used by lim.ts and lexicographic.ts.
+ */
+function playerScoreGroups(
   players: Player[],
   games: Game[][],
 ): Map<number, Player[]> {
@@ -155,8 +445,13 @@ function rankPlayers(players: Player[], games: Game[][]): Player[] {
  * Returns the player who should receive a bye this round, or undefined if
  * the player count is even. Prefers the lowest-ranked player who has not
  * already received a bye.
+ *
+ * @deprecated Use assignBye(states, games, tiebreak) instead.
  */
-function assignBye(ranked: Player[], games: Game[][]): Player | undefined {
+function assignByeLegacy(
+  ranked: Player[],
+  games: Game[][],
+): Player | undefined {
   if (ranked.length % 2 === 0) {
     return undefined;
   }
@@ -262,8 +557,11 @@ function floatHistory(player: string, games: Game[][]): FloatKind[] {
 }
 
 export {
+  allocateColor,
   assignBye,
+  assignByeLegacy,
   assignColors,
+  buildPlayerStates,
   byeScore,
   colorHistory,
   colorPreference,
@@ -273,6 +571,7 @@ export {
   isTopscorer,
   matchColorHistory,
   matchCount,
+  playerScoreGroups,
   rankPlayers,
   score,
   scoreGroups,
@@ -280,4 +579,4 @@ export {
   unplayedRounds,
 };
 
-export type { Color };
+export type { Color, ColorRule, PlayerState };

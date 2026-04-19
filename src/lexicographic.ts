@@ -1,98 +1,64 @@
-import { byeScore, hasFaced, matchCount, scoreGroups } from './utilities.js';
+import { scoreGroups } from './utilities.js';
 
-import type { Game, Pairing, Player } from './types.js';
+import type { Pairing } from './types.js';
+import type { PlayerState } from './utilities.js';
 
 type ColorAllocator = (
-  a: Player,
-  b: Player,
-  players: Player[],
-  games: Game[][],
+  a: PlayerState,
+  b: PlayerState,
 ) => { black: string; white: string };
 
 /**
  * Ranks players for lexicographic pairing (FIDE C.04.5 Article 1.2):
  * (1) score descending, (2) TPN ascending (original array index).
  */
-function rankByScoreThenTPN(players: Player[], games: Game[][]): Player[] {
-  const scoreMap = new Map<string, number>();
-  for (const p of players) {
-    let sum = 0;
-    for (const g of games.flat()) {
-      if (g.white === p.id) {
-        sum += g.result;
-      } else if (g.black === p.id) {
-        sum += 1 - g.result;
-      }
-    }
-    scoreMap.set(p.id, sum);
-  }
-
-  return [...players].toSorted((a, b) => {
-    const scoreDiff = (scoreMap.get(b.id) ?? 0) - (scoreMap.get(a.id) ?? 0);
+function rankByScoreThenTPN(states: PlayerState[]): PlayerState[] {
+  return [...states].toSorted((a, b) => {
+    const scoreDiff = b.score - a.score;
     if (scoreDiff !== 0) {
       return scoreDiff;
     }
-    // TPN ascending: lower original index ranks higher
-    return players.indexOf(a) - players.indexOf(b);
+    // TPN ascending: lower TPN ranks higher
+    return a.tpn - b.tpn;
   });
 }
 
 /**
  * Assigns PAB (bye) for lexicographic pairing (FIDE C.04.5 Article 3.4).
  * Eligible candidates:
- *   1. Has not already received a bye or forfeit win (C2 — byeScore === 0)
+ *   1. Has not already received a bye or forfeit win (C2 — byeCount === 0)
  *   2. Lowest score
- *   3. Most matches played
+ *   3. Most matches played (rounds - unplayedRounds - byeCount)
  *   4. Largest TPN (highest original array index)
  * Returns undefined when player count is even.
  */
 function assignLexicographicBye(
-  players: Player[],
-  ranked: Player[],
-  games: Game[][],
-): Player | undefined {
+  ranked: PlayerState[],
+): PlayerState | undefined {
   if (ranked.length % 2 === 0) {
     return undefined;
   }
 
   // C2: exclude players who already received a bye
-  const eligible = ranked.filter((p) => byeScore(p.id, games) === 0);
+  const eligible = ranked.filter((s) => s.byeCount === 0);
   const candidates = eligible.length > 0 ? eligible : ranked;
 
   // 1. Find lowest score among candidates
-  const scoreMap = new Map<string, number>();
-  for (const p of candidates) {
-    let sum = 0;
-    for (const g of games.flat()) {
-      if (g.white === p.id) {
-        sum += g.result;
-      } else if (g.black === p.id) {
-        sum += 1 - g.result;
-      }
-    }
-    scoreMap.set(p.id, sum);
-  }
-
-  const minScore = Math.min(...candidates.map((p) => scoreMap.get(p.id) ?? 0));
-  const lowestScored = candidates.filter(
-    (p) => (scoreMap.get(p.id) ?? 0) === minScore,
-  );
+  const minScore = Math.min(...candidates.map((s) => s.score));
+  const lowestScored = candidates.filter((s) => s.score === minScore);
 
   if (lowestScored.length === 1) {
     return lowestScored[0];
   }
 
   // 2. Most matches played among lowest-scored
-  const matchCounts = new Map<string, number>();
-  for (const p of lowestScored) {
-    matchCounts.set(p.id, matchCount(p.id, games));
-  }
+  // matches played = rounds with a real game = colorHistory length minus bye/unplayed
+  const matchesPlayed = (s: PlayerState): number =>
+    s.colorHistory.filter((c) => c !== undefined).length;
 
-  const maxMatches = Math.max(
-    ...lowestScored.map((p) => matchCounts.get(p.id) ?? 0),
-  );
+  const maxMatches = Math.max(...lowestScored.map((s) => matchesPlayed(s)));
   const mostMatches = lowestScored.filter(
-    (p) => (matchCounts.get(p.id) ?? 0) === maxMatches,
+    (s) => matchesPlayed(s) === maxMatches,
   );
 
   if (mostMatches.length === 1) {
@@ -100,13 +66,7 @@ function assignLexicographicBye(
   }
 
   // 3. Largest TPN (highest original array index)
-  let best = mostMatches[0];
-  for (const p of mostMatches) {
-    if (best === undefined || players.indexOf(p) > players.indexOf(best)) {
-      best = p;
-    }
-  }
-  return best;
+  return mostMatches.toSorted((a, b) => b.tpn - a.tpn)[0];
 }
 
 /**
@@ -115,32 +75,27 @@ function assignLexicographicBye(
  * The identifier: sort pairs by top-member TPN ascending, then concatenate
  * [all top TPNs, all bottom TPNs in corresponding pair order].
  */
-function matchingIdentifier(
-  matching: [Player, Player][],
-  players: Player[],
-): number[] {
+function matchingIdentifier(matching: [PlayerState, PlayerState][]): number[] {
   // Orient each pair: first = smaller TPN (top), second = larger TPN (bottom).
   const oriented = matching.map(([a, b]) => {
-    const ia = players.indexOf(a);
-    const ib = players.indexOf(b);
-    return ia < ib
-      ? ([a, b] as [Player, Player])
-      : ([b, a] as [Player, Player]);
+    return a.tpn < b.tpn
+      ? ([a, b] as [PlayerState, PlayerState])
+      : ([b, a] as [PlayerState, PlayerState]);
   });
   // Sort pairs by top-member TPN ascending.
-  const sortedPairs = oriented.toSorted(
-    ([a], [b]) => players.indexOf(a) - players.indexOf(b),
-  );
-  const tops = sortedPairs.map(([top]) => players.indexOf(top));
-  const bottoms = sortedPairs.map(([, bot]) => players.indexOf(bot));
+  const sortedPairs = oriented.toSorted(([a], [b]) => a.tpn - b.tpn);
+  const tops = sortedPairs.map(([top]) => top.tpn);
+  const bottoms = sortedPairs.map(([, bot]) => bot.tpn);
   return [...tops, ...bottoms];
 }
 
 /**
- * Generates all perfect matchings of a sorted array of players.
- * Each matching is an array of [player, player] pairs.
+ * Generates all perfect matchings of a sorted array of player states.
+ * Each matching is an array of [PlayerState, PlayerState] pairs.
  */
-function allPerfectMatchings(sorted: Player[]): [Player, Player][][] {
+function allPerfectMatchings(
+  sorted: PlayerState[],
+): [PlayerState, PlayerState][][] {
   if (sorted.length === 0) {
     return [[]];
   }
@@ -148,7 +103,7 @@ function allPerfectMatchings(sorted: Player[]): [Player, Player][][] {
   if (first === undefined) {
     return [[]];
   }
-  const result: [Player, Player][][] = [];
+  const result: [PlayerState, PlayerState][][] = [];
   for (let index = 1; index < sorted.length; index++) {
     const partner = sorted[index];
     if (partner === undefined) {
@@ -171,20 +126,16 @@ function allPerfectMatchings(sorted: Player[]): [Player, Player][][] {
  * order. Top member = smaller TPN in the pair.
  */
 function pairBracket(
-  bracket: Player[],
-  players: Player[],
-  games: Game[][],
+  bracket: PlayerState[],
   allocateColors: ColorAllocator,
 ): Pairing[] {
-  // Sort bracket by TPN ascending (original array index).
-  const sorted = [...bracket].toSorted(
-    (a, b) => players.indexOf(a) - players.indexOf(b),
-  );
+  // Sort bracket by TPN ascending.
+  const sorted = [...bracket].toSorted((a, b) => a.tpn - b.tpn);
 
   // Generate all perfect matchings and sort by FIDE identifier.
   const matchings = allPerfectMatchings(sorted).toSorted((ma, mb) => {
-    const ia = matchingIdentifier(ma, players);
-    const ib = matchingIdentifier(mb, players);
+    const ia = matchingIdentifier(ma);
+    const ib = matchingIdentifier(mb);
     for (let k = 0; k < Math.min(ia.length, ib.length); k++) {
       const diff = (ia[k] ?? 0) - (ib[k] ?? 0);
       if (diff !== 0) {
@@ -196,9 +147,9 @@ function pairBracket(
 
   // Return the first matching satisfying C1 (no rematches).
   for (const matching of matchings) {
-    const valid = matching.every(([a, b]) => !hasFaced(a.id, b.id, games));
+    const valid = matching.every(([a, b]) => !a.opponents.has(b.id));
     if (valid) {
-      return matching.map(([a, b]) => allocateColors(a, b, players, games));
+      return matching.map(([a, b]) => allocateColors(a, b));
     }
   }
 
@@ -213,28 +164,18 @@ function pairBracket(
  * (minimum number needed to make the current bracket even).
  */
 function pairAllBrackets(
-  toBePaired: Player[],
-  players: Player[],
-  games: Game[][],
+  toBePaired: PlayerState[],
   allocateColors: ColorAllocator,
 ): Pairing[] {
   // Build score groups in descending score order.
-  const groups = scoreGroups(toBePaired, games);
+  const groups = scoreGroups(toBePaired);
   const sortedScores = [...groups.keys()].toSorted((a, b) => b - a);
 
   const pairings: Pairing[] = [];
   // Track which players have been paired (to handle upfloaters).
-  const remaining = new Map<number, Player[]>();
-  for (const s of sortedScores) {
-    const group = groups.get(s);
-    if (group !== undefined) {
-      // Within each group, sort by TPN ascending.
-      remaining.set(
-        s,
-        [...group].toSorted((a, b) => players.indexOf(a) - players.indexOf(b)),
-      );
-    }
-  }
+  const remaining = new Map<number, PlayerState[]>(
+    sortedScores.map((s) => [s, [...(groups.get(s) ?? [])]]),
+  );
 
   for (let scoreIndex = 0; scoreIndex < sortedScores.length; scoreIndex++) {
     const currentScore = sortedScores[scoreIndex];
@@ -262,19 +203,14 @@ function pairAllBrackets(
             bracket = [...bracket, upfloater];
             remaining.set(
               nextScore,
-              nextGroup.filter((p) => p.id !== upfloater.id),
+              nextGroup.filter((s) => s.id !== upfloater.id),
             );
           }
         }
       }
     }
 
-    const bracketPairings = pairBracket(
-      bracket,
-      players,
-      games,
-      allocateColors,
-    );
+    const bracketPairings = pairBracket(bracket, allocateColors);
     pairings.push(...bracketPairings);
   }
 

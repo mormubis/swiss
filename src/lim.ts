@@ -1,549 +1,496 @@
+/**
+ * FIDE Lim System pairing (C.04.4.3) — weighted blossom matching.
+ *
+ * Uses maximum-weight matching (Edmonds' blossom algorithm) so that all
+ * score groups are handled correctly in a single global pass.
+ *
+ * The Lim system shares the same ranking (score desc, TPN asc) and round-1
+ * top-half-vs-bottom-half pairing as the Dutch system. The key Lim feature
+ * is bi-directional score-group traversal (highest → lowest → median), but
+ * since we run a single global blossom pass the weight encoding handles
+ * score-group membership automatically.
+ *
+ * Algorithm outline
+ * -----------------
+ * 1. Normalise bye sentinels (black === white → black === '').
+ * 2. Build PlayerState for every player.
+ * 3. Sort by score DESC, TPN ASC.
+ * 4. Determine the bye assignee when player count is odd.
+ * 5. Single global blossom pass:
+ *      a. Build edges for all remaining players with full quality weights.
+ *         C1 rematches produce zero-weight edges and are skipped.
+ *      b. Run blossom with maxcardinality=true to find the optimal matching.
+ * 6. Allocate colours for every pair via FIDE Article 5.
+ */
+
+import { maxWeightMatching } from './blossom.js';
 import {
+  allocateColor,
   assignBye,
-  colorHistory,
-  colorPreference,
-  hasFaced,
-  rankPlayers,
+  buildPlayerStates,
   scoreGroups,
 } from './utilities.js';
+import { buildEdgeWeight } from './weights.js';
 
+import type { DynamicUint } from './dynamic-uint.js';
 import type { Game, PairingResult, Player } from './types.js';
+import type { ColorRule, PlayerState } from './utilities.js';
+import type { BracketContext, Criterion } from './weights.js';
 
-/** Direction of scoregroup traversal. */
-type Direction = 'down' | 'up';
+// ---------------------------------------------------------------------------
+// FIDE Article 5.2 colour rules (same as Dutch)
+// ---------------------------------------------------------------------------
 
-/**
- * Returns the median score for a given number of rounds played.
- * Players at this score are paired last in Lim's bi-directional order.
- */
-function medianScore(roundsPlayed: number): number {
-  return roundsPlayed / 2;
+function rankPreference(s: PlayerState['preferenceStrength']): number {
+  if (s === 'absolute') return 3;
+  if (s === 'strong') return 2;
+  if (s === 'mild') return 1;
+  return 0;
 }
 
-/**
- * Checks whether two players are compatible for pairing under FIDE C.04.4.3
- * Articles 2.1, 5.1.1, and 5.1.2.
- *
- * In the last round, only the rematch constraint is checked (Article 6).
- */
-function isLimCompatible(
-  a: Player,
-  b: Player,
-  games: Game[][],
-  isLastRound: boolean,
-): boolean {
-  // Article 2.1.1: no rematches
-  if (hasFaced(a.id, b.id, games)) {
-    return false;
-  }
-
-  if (isLastRound) {
-    // Article 6: same-score pairing has priority over color rules
-    return true;
-  }
-
-  const histA = colorHistory(a.id, games);
-  const histB = colorHistory(b.id, games);
-  const lastTwoA = histA.slice(-2);
-  const lastTwoB = histB.slice(-2);
-
-  // Article 5.1.1: no 3 same colors in a row
-  const aLastTwoSame = lastTwoA.length === 2 && lastTwoA[0] === lastTwoA[1];
-  const bLastTwoSame = lastTwoB.length === 2 && lastTwoB[0] === lastTwoB[1];
-
-  if (aLastTwoSame && bLastTwoSame) {
-    // Both need alternates — they can only be paired if they need opposite alternates
-    const aNeeds = lastTwoA[0] === 'white' ? 'black' : 'white';
-    const bNeeds = lastTwoB[0] === 'white' ? 'black' : 'white';
-    if (aNeeds === bNeeds) {
-      // Both need the same color — incompatible (one would get 3 in a row)
-      return false;
+const LIM_COLOR_RULES: ColorRule[] = [
+  // 5.2.1 Grant both colour preferences (if they differ)
+  (hrp, opp) => {
+    if (
+      hrp.preferredColor !== undefined &&
+      opp.preferredColor !== undefined &&
+      hrp.preferredColor !== opp.preferredColor
+    ) {
+      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
     }
-  }
+    return 'continue';
+  },
+  // 5.2.2 Grant stronger preference; both absolute → wider colorDiff wins
+  (hrp, opp) => {
+    const hrpS = rankPreference(hrp.preferenceStrength);
+    const oppS = rankPreference(opp.preferenceStrength);
 
-  // Article 5.1.2: no 3+ color imbalance
-  // Check if at least one valid color assignment exists
-  const prefA = colorPreference(a.id, games);
-  const prefB = colorPreference(b.id, games);
-
-  // colorPreference: positive = player has played more black, prefers white
-  // If we give a player white, their diff (blacks - whites) decreases by 1
-  // If we give a player black, their diff increases by 1
-  // Bad if |diff| would reach 3 or more
-
-  const canAWhite = prefA - 1 > -3; // giving white: new diff = prefA-1; bad if <= -2 (3+ white excess)
-  const canABlack = prefA + 1 < 3; // giving black: new diff = prefA+1; bad if >= 2 (3+ black excess)
-  const canBWhite = prefB - 1 > -3;
-  const canBBlack = prefB + 1 < 3;
-
-  // Check if any valid assignment exists
-  const assignment1Valid = canAWhite && canBBlack; // a=white, b=black
-  const assignment2Valid = canABlack && canBWhite; // a=black, b=white
-
-  return assignment1Valid || assignment2Valid;
-}
-
-/**
- * Returns score values in Lim's bi-directional order (Article 2.2):
- * highest → down to just before median, then lowest → up to median.
- * Median scoregroup is processed last.
- */
-function limPairingOrder(
-  groups: Map<number, Player[]>,
-  roundsPlayed: number,
-): number[] {
-  const scores = [...groups.keys()].toSorted((a, b) => b - a);
-  const median = medianScore(roundsPlayed);
-
-  const aboveMedian = scores.filter((s) => s > median);
-  const belowMedian = scores.filter((s) => s < median);
-  const atMedian = scores.filter((s) => s === median);
-
-  // Bi-directional: highest first, then lowest (ascending from below), median last
-  return [...aboveMedian, ...belowMedian.toReversed(), ...atMedian];
-}
-
-/**
- * Tries to find a complete valid matching for the given group.
- *
- * Uses the Lim top/bottom half split as the first proposal (Article 2.4),
- * then tries all possible exchanges (Article 4) until a fully compatible
- * matching is found.
- *
- * Falls back to relaxed matching (allowing rematches) when no perfect
- * compatible matching exists.
- *
- * Returns an array of index pairs [topIndex, bottomIndex].
- */
-function findBestMatching(
-  group: Player[],
-  games: Game[][],
-): [number, number][] {
-  const half = Math.floor(group.length / 2);
-  if (half === 0) {
-    return [];
-  }
-
-  // Try to find a valid matching with no rematches and color constraints
-  const strictMatching = tryFindMatching(group, games, false);
-  if (strictMatching !== undefined) {
-    return strictMatching;
-  }
-
-  // Relax color constraints (last-round mode)
-  const relaxedMatching = tryFindMatching(group, games, true);
-  if (relaxedMatching !== undefined) {
-    return relaxedMatching;
-  }
-
-  // Last resort: allow rematches — just pair in order
-  const lastResort: [number, number][] = [];
-  const used = new Set<number>();
-  for (let index = 0; index < group.length; index++) {
-    if (used.has(index)) {
-      continue;
+    if (hrpS > oppS && hrp.preferredColor !== undefined) {
+      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
     }
-    for (let index_ = index + 1; index_ < group.length; index_++) {
-      if (used.has(index_)) {
-        continue;
+    if (oppS > hrpS && opp.preferredColor !== undefined) {
+      return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
+    }
+    // Both absolute: wider colorDiff wins
+    if (hrpS === 3 && oppS === 3) {
+      const hrpAbs = Math.abs(hrp.colorDiff);
+      const oppAbs = Math.abs(opp.colorDiff);
+      if (hrpAbs > oppAbs && hrp.preferredColor !== undefined) {
+        return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
       }
-      lastResort.push([index, index_]);
-      used.add(index);
-      used.add(index_);
-      break;
+      if (oppAbs > hrpAbs && opp.preferredColor !== undefined) {
+        return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
+      }
     }
-  }
-  return lastResort;
+    return 'continue';
+  },
+  // 5.2.3 Alternate from most recent divergent round
+  (hrp, opp) => {
+    const minLength = Math.min(
+      hrp.colorHistory.length,
+      opp.colorHistory.length,
+    );
+    for (let index = minLength - 1; index >= 0; index--) {
+      const h = hrp.colorHistory[index];
+      const o = opp.colorHistory[index];
+      if (h !== undefined && o !== undefined && h !== o) {
+        return h === 'white' ? 'hrp-black' : 'hrp-white';
+      }
+    }
+    return 'continue';
+  },
+  // 5.2.4 Grant HRP's preference
+  (hrp) => {
+    if (hrp.preferredColor !== undefined) {
+      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
+    }
+    return 'continue';
+  },
+  // 5.2.5 Odd TPN → initial colour (white)
+  (hrp) => (hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black'),
+];
+
+// Rank comparator for allocateColor: lower TPN = higher rank
+function limRankCompare(a: PlayerState, b: PlayerState): number {
+  return a.tpn - b.tpn;
+}
+
+// Bye tiebreak: among equal-score players, highest TPN (lowest ranked) first
+function limByeTiebreak(a: PlayerState, b: PlayerState): number {
+  if (a.unplayedRounds !== b.unplayedRounds)
+    return a.unplayedRounds - b.unplayedRounds;
+  return b.tpn - a.tpn;
+}
+
+// ---------------------------------------------------------------------------
+// Context helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extended BracketContext for Lim.
+ */
+interface LimContext extends BracketContext {
+  currentBracketIds: Set<string>;
+  nextBracketIds: Set<string>;
+  totalRounds: number;
 }
 
 /**
- * Tries to find a complete valid matching using backtracking.
- * Starts from the Lim top/bottom proposal and exchanges as needed.
+ * Compute score-group parameters needed by the criteria.
  */
-function tryFindMatching(
-  group: Player[],
-  games: Game[][],
-  relaxColors: boolean,
-): [number, number][] | undefined {
-  const half = Math.floor(group.length / 2);
-
-  // Try all possible matchings via backtracking.
-  // To stay close to the Lim proposal, we enumerate in a specific order.
-  return backtrackMatch(group, games, relaxColors, half, 0, new Set());
-}
-
-/**
- * Backtracking matching: pairs player at topIndex with some available
- * bottom-half player, then recurses.
- */
-function backtrackMatch(
-  group: Player[],
-  games: Game[][],
-  relaxColors: boolean,
-  half: number,
-  topIndex: number,
-  usedBottoms: Set<number>,
-): [number, number][] | undefined {
-  if (topIndex >= half) {
-    // All top-half players paired
-    return [];
+function computeScoreGroupParameters(states: PlayerState[]): {
+  scoreGroupShifts: Map<number, number>;
+  scoreGroupSizeBits: number;
+  scoreGroupsShift: number;
+} {
+  const groups = scoreGroups(states);
+  let maxScoreGroupSize = 0;
+  for (const [, members] of groups) {
+    if (members.length > maxScoreGroupSize) maxScoreGroupSize = members.length;
   }
 
-  const topPlayer = group[topIndex];
-  if (topPlayer === undefined) {
-    return undefined;
-  }
-
-  // Try bottom-half partners in order: proposed first (half + topIndex),
-  // then others by increasing distance from the proposed position.
-  const proposedBottom = half + topIndex;
-  const candidateBottoms = getBottomCandidates(
-    half,
-    group.length,
-    proposedBottom,
+  const scoreGroupSizeBits = Math.max(
+    1,
+    Math.ceil(Math.log2(maxScoreGroupSize + 1)),
   );
 
-  for (const bottomIndex of candidateBottoms) {
-    if (usedBottoms.has(bottomIndex)) {
-      continue;
+  // Build shifts from lowest score upward
+  const sortedScores = [...groups.keys()].toSorted((a, b) => a - b);
+  const scoreGroupShifts = new Map<number, number>();
+  let offset = 0;
+  for (const sc of sortedScores) {
+    scoreGroupShifts.set(sc, offset);
+    const groupSize = groups.get(sc)?.length ?? 0;
+    offset += Math.max(1, Math.ceil(Math.log2(groupSize + 1)));
+  }
+  const scoreGroupsShift = Math.max(1, offset);
+
+  return { scoreGroupShifts, scoreGroupSizeBits, scoreGroupsShift };
+}
+
+// ---------------------------------------------------------------------------
+// Score-group index helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a map from player id → 0-based position within their score group
+ * (sorted by TPN ascending).
+ */
+function buildGroupPositions(states: PlayerState[]): Map<string, number> {
+  const groups = scoreGroups(states);
+  const positions = new Map<string, number>();
+  for (const [, members] of groups) {
+    for (const [index, member] of members.entries()) {
+      positions.set(member.id, index);
     }
-    const bottomPlayer = group[bottomIndex];
-    if (bottomPlayer === undefined) {
-      continue;
-    }
-    if (isLimCompatible(topPlayer, bottomPlayer, games, relaxColors)) {
-      const newUsed = new Set(usedBottoms);
-      newUsed.add(bottomIndex);
-      const rest = backtrackMatch(
-        group,
-        games,
-        relaxColors,
-        half,
-        topIndex + 1,
-        newUsed,
-      );
-      if (rest !== undefined) {
-        return [[topIndex, bottomIndex], ...rest];
+  }
+  return positions;
+}
+
+/**
+ * Returns a map from score → group size.
+ */
+function buildGroupSizes(states: PlayerState[]): Map<number, number> {
+  const groups = scoreGroups(states);
+  const sizes = new Map<number, number>();
+  for (const [sc, members] of groups) {
+    sizes.set(sc, members.length);
+  }
+  return sizes;
+}
+
+// ---------------------------------------------------------------------------
+// Lim pairing criteria
+//
+// Very similar to Dutch. The Lim system uses the same ranking and
+// score-group structure; bi-directional traversal is a notional feature
+// of the spec that the blossom weight encoding handles naturally.
+//
+// Within a score group we add a criterion that prefers the "direct opposite"
+// pairing: S1[i] paired with S2[i] (i.e. rank-i with rank-(i+half)).
+// ---------------------------------------------------------------------------
+
+interface LimContextFull extends LimContext {
+  groupPositions: Map<string, number>;
+  groupSizes: Map<number, number>;
+}
+
+const LIM_CRITERIA: Criterion[] = [
+  // C6: Minimise downfloaters = maximise pairs within same score group.
+  {
+    bits: (context: BracketContext) =>
+      (context as LimContext).scoreGroupSizeBits + 1,
+    evaluate: (a: PlayerState, b: PlayerState, context: BracketContext) => {
+      const lContext = context as LimContext;
+      const bits = lContext.scoreGroupSizeBits + 1;
+      const max = (1 << bits) - 1;
+      if (a.score === b.score) return max;
+      return 0;
+    },
+  },
+  // C7: Minimise downfloater scores (descending).
+  {
+    bits: (context: BracketContext) => (context as LimContext).scoreGroupsShift,
+    evaluate: (a: PlayerState, b: PlayerState, context: BracketContext) => {
+      const lContext = context as LimContext;
+      if (lContext.scoreGroupsShift === 0) return 0;
+
+      let value = 0;
+      if (a.score === b.score) {
+        const shift = lContext.scoreGroupShifts.get(a.score) ?? 0;
+        const bits = lContext.scoreGroupSizeBits;
+        if (shift + bits - 1 < 32) value |= 1 << (shift + bits - 1);
+        if (shift + bits < 32) value |= 1 << (shift + bits);
+      } else {
+        const lower = a.score < b.score ? a : b;
+        const shift = lContext.scoreGroupShifts.get(lower.score) ?? 0;
+        const bits = lContext.scoreGroupSizeBits;
+        if (shift + bits - 1 < 32) value |= 1 << (shift + bits - 1);
+      }
+      return value;
+    },
+  },
+  // Lim-specific: within same score group, prefer the "direct opposite"
+  // pairing S1[i] with S2[i] (i.e. rank-pos i with rank-pos i+half).
+  // Encodes how close the pairing is to the ideal top-half/bottom-half split.
+  // Uses ceil(log2(maxGroupSize+1)) bits.
+  {
+    bits: (context: BracketContext) =>
+      (context as LimContext).scoreGroupSizeBits,
+    evaluate: (a: PlayerState, b: PlayerState, context: BracketContext) => {
+      const lContext = context as LimContextFull;
+      if (a.score !== b.score) return 0;
+
+      const groupSize = lContext.groupSizes.get(a.score) ?? 2;
+      const half = Math.floor(groupSize / 2);
+      if (half === 0) return 0;
+
+      const posA = lContext.groupPositions.get(a.id) ?? 0;
+      const posB = lContext.groupPositions.get(b.id) ?? 0;
+
+      // Ideal: |posA - posB| === half
+      const distribution = Math.abs(posA - posB);
+      const deviation = Math.abs(distribution - half);
+      // More bits means larger groups; maxDeviation = half
+      return Math.max(0, half - deviation);
+    },
+  },
+  // C12: Minimise players not getting colour preference.
+  {
+    bits: 2,
+    evaluate: (a: PlayerState, b: PlayerState) => {
+      let aColor: 'white' | 'black';
+      if (a.colorDiff < b.colorDiff) {
+        aColor = 'white';
+      } else if (a.colorDiff > b.colorDiff) {
+        aColor = 'black';
+      } else {
+        aColor = a.tpn < b.tpn ? 'white' : 'black';
+      }
+      const bColor = aColor === 'white' ? 'black' : 'white';
+
+      let violations = 0;
+      if (a.preferredColor !== undefined && a.preferredColor !== aColor)
+        violations++;
+      if (b.preferredColor !== undefined && b.preferredColor !== bColor)
+        violations++;
+      return Math.max(0, 3 - violations);
+    },
+  },
+  // C13: Minimise players not getting strong/absolute preference.
+  {
+    bits: 2,
+    evaluate: (a: PlayerState, b: PlayerState) => {
+      let aColor: 'white' | 'black';
+      if (a.colorDiff < b.colorDiff) {
+        aColor = 'white';
+      } else if (a.colorDiff > b.colorDiff) {
+        aColor = 'black';
+      } else {
+        aColor = a.tpn < b.tpn ? 'white' : 'black';
+      }
+      const bColor = aColor === 'white' ? 'black' : 'white';
+
+      let violations = 0;
+      if (
+        (a.preferenceStrength === 'absolute' ||
+          a.preferenceStrength === 'strong') &&
+        a.preferredColor !== undefined &&
+        a.preferredColor !== aColor
+      )
+        violations++;
+      if (
+        (b.preferenceStrength === 'absolute' ||
+          b.preferenceStrength === 'strong') &&
+        b.preferredColor !== undefined &&
+        b.preferredColor !== bColor
+      )
+        violations++;
+      return Math.max(0, 3 - violations);
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Edge-building helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a complete graph for a set of players.
+ * Returns [indexA, indexB, weight] tuples for maxWeightMatching.
+ * Edges with zero weight (C1 rematches) are omitted so that
+ * maxcardinality mode never forces a rematch.
+ */
+function buildEdges(
+  players: PlayerState[],
+  context: LimContextFull,
+): [number, number, DynamicUint][] {
+  const edges: [number, number, DynamicUint][] = [];
+  for (let index = 0; index < players.length; index++) {
+    for (let index_ = index + 1; index_ < players.length; index_++) {
+      const a = players.at(index);
+      const b = players.at(index_);
+      if (a === undefined || b === undefined) continue;
+      const weight = buildEdgeWeight(LIM_CRITERIA, a, b, context);
+      if (!weight.isZero()) {
+        edges.push([index, index_, weight]);
       }
     }
   }
-
-  return undefined;
+  return edges;
 }
 
 /**
- * Returns bottom-half indices in preference order for Lim pairing.
- * Starts with the proposed index, then alternates outward.
+ * Run blossom on edges and return a Map<id, id> of matched pairs.
  */
-function getBottomCandidates(
-  half: number,
-  groupLength: number,
-  proposedBottom: number,
-): number[] {
-  const candidates: number[] = [proposedBottom];
-  let lo = proposedBottom - 1;
-  let hi = proposedBottom + 1;
-
-  while (lo >= half || hi < groupLength) {
-    if (hi < groupLength) {
-      candidates.push(hi);
-      hi++;
-    }
-    if (lo >= half) {
-      candidates.push(lo);
-      lo--;
+function runBlossom(
+  players: PlayerState[],
+  edges: [number, number, DynamicUint][],
+  maxcardinality = true,
+): Map<string, string> {
+  if (players.length === 0) return new Map();
+  const matching = maxWeightMatching(edges, maxcardinality);
+  const result = new Map<string, string>();
+  for (const [index, index_] of matching.entries()) {
+    if (index_ !== undefined && index_ !== -1 && index_ > index) {
+      const a = players.at(index);
+      const b = players.at(index_);
+      if (a === undefined || b === undefined) continue;
+      result.set(a.id, b.id);
+      result.set(b.id, a.id);
     }
   }
-
-  return candidates;
+  return result;
 }
 
+// ---------------------------------------------------------------------------
+// Bye sentinel normalisation
+// ---------------------------------------------------------------------------
+
 /**
- * Selects which player should float out of the given group to the adjacent
- * scoregroup (Article 3).
- *
- * When pairing downward (float to lower group): choose lowest-numbered
- * (highest-indexed in ranked order) player.
- * When pairing upward (float to higher group): choose highest-numbered
- * (lowest-indexed in ranked order) player.
+ * Normalise games so that the old `black === white` bye sentinel is converted
+ * to the canonical `black === ''` sentinel expected by buildPlayerStates.
  */
-function selectFloater(
-  group: Player[],
-  direction: Direction,
-): Player | undefined {
-  if (direction === 'down') {
-    return group.at(-1);
-  }
-  return group[0];
+function normaliseGames(games: Game[][]): Game[][] {
+  return games.map((round) =>
+    round.map((game) =>
+      game.black === game.white ? { ...game, black: '' } : game,
+    ),
+  );
 }
 
-/**
- * Allocates colors for a pairing according to FIDE C.04.4.3 Article 5.
- */
-function allocateLimColors(
-  a: Player,
-  b: Player,
-  games: Game[][],
-  ranked: Player[],
-): { black: string; white: string } {
-  const histA = colorHistory(a.id, games);
-  const histB = colorHistory(b.id, games);
-  const lastTwoA = histA.slice(-2);
-  const lastTwoB = histB.slice(-2);
+// ---------------------------------------------------------------------------
+// Main pair function
+// ---------------------------------------------------------------------------
 
-  const aLastTwoSame = lastTwoA.length === 2 && lastTwoA[0] === lastTwoA[1];
-  const bLastTwoSame = lastTwoB.length === 2 && lastTwoB[0] === lastTwoB[1];
-
-  // Article 5.3: player with same color last 2 rounds MUST get alternate
-  if (aLastTwoSame && !bLastTwoSame) {
-    const aColor = lastTwoA[0];
-    return aColor === 'white'
-      ? { black: a.id, white: b.id }
-      : { black: b.id, white: a.id };
-  }
-  if (bLastTwoSame && !aLastTwoSame) {
-    const bColor = lastTwoB[0];
-    return bColor === 'white'
-      ? { black: b.id, white: a.id }
-      : { black: a.id, white: b.id };
-  }
-  if (aLastTwoSame && bLastTwoSame) {
-    // Both need alternates — they need opposite colors (guaranteed by isLimCompatible)
-    const aNeeds = lastTwoA[0] === 'white' ? 'black' : 'white';
-    return aNeeds === 'white'
-      ? { black: b.id, white: a.id }
-      : { black: a.id, white: b.id };
-  }
-
-  // Use color preference to determine colors
-  const prefA = colorPreference(a.id, games);
-  const prefB = colorPreference(b.id, games);
-
-  if (prefA !== prefB) {
-    // Give white to player with more black excess (positive pref = played more black = wants white)
-    if (prefA > prefB) {
-      return { black: b.id, white: a.id };
-    }
-    return { black: a.id, white: b.id };
-  }
-
-  // Equal preference: use rank (index in ranked array) for tiebreak
-  // Article 5.4: higher-ranked player gets the alternate from their last round
-  const rankA = ranked.findIndex((p) => p.id === a.id);
-  const rankB = ranked.findIndex((p) => p.id === b.id);
-  const lastA = histA.at(-1);
-  const lastB = histB.at(-1);
-
-  if (lastA !== undefined || lastB !== undefined) {
-    // Give alternate to higher-ranked player (lower index = higher rank)
-    if (rankA <= rankB) {
-      // a is higher ranked — give a the alternate from last round
-      const alternate = lastA === 'white' ? 'black' : 'white';
-      return alternate === 'white'
-        ? { black: b.id, white: a.id }
-        : { black: a.id, white: b.id };
-    } else {
-      const alternate = lastB === 'white' ? 'black' : 'white';
-      return alternate === 'white'
-        ? { black: a.id, white: b.id }
-        : { black: b.id, white: a.id };
-    }
-  }
-
-  // Round 1 or no history: higher-ranked (lower index) gets white
-  if (rankA <= rankB) {
-    return { black: b.id, white: a.id };
-  }
-  return { black: a.id, white: b.id };
-}
-
-/**
- * Pairs a scoregroup (or merged group with floaters), returning pairings and
- * any players that couldn't be paired (to be floated down/up).
- */
-function pairGroup(
-  group: Player[],
-  games: Game[][],
-  ranked: Player[],
-): { pairings: { black: string; white: string }[]; unpaired: Player[] } {
-  if (group.length < 2) {
-    return { pairings: [], unpaired: [...group] };
-  }
-
-  const matching = findBestMatching(group, games);
-  const paired = new Set<number>();
-  const pairings: { black: string; white: string }[] = [];
-
-  for (const [ti, bi] of matching) {
-    const topPlayer = group[ti];
-    const bottomPlayer = group[bi];
-    if (topPlayer !== undefined && bottomPlayer !== undefined) {
-      pairings.push(allocateLimColors(topPlayer, bottomPlayer, games, ranked));
-      paired.add(ti);
-      paired.add(bi);
-    }
-  }
-
-  const unpaired = group.filter((_, index) => !paired.has(index));
-
-  return { pairings, unpaired };
-}
-
-/**
- * Finds the score value adjacent to currentScore in the given direction.
- */
-function findNextScore(
-  order: number[],
-  currentScore: number,
-  direction: 'down' | 'up',
-): number | undefined {
-  if (direction === 'down') {
-    let best: number | undefined;
-    for (const s of order) {
-      if (s < currentScore && (best === undefined || s > best)) {
-        best = s;
-      }
-    }
-    return best;
-  } else {
-    let best: number | undefined;
-    for (const s of order) {
-      if (s > currentScore && (best === undefined || s < best)) {
-        best = s;
-      }
-    }
-    return best;
-  }
-}
-
-/**
- * Implements the Lim pairing system (FIDE C.04.4.3).
- */
 function pair(players: Player[], games: Game[][]): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
 
-  const ranked = rankPlayers(players, games);
-  const byePlayer = assignBye(ranked, games);
-  const toBePaired = ranked.filter((p) => p.id !== byePlayer?.id);
-  const roundsPlayed = games.length;
+  const normalisedGames = normaliseGames(games);
+  const totalRounds = normalisedGames.length + 1;
+  const states = buildPlayerStates(players, normalisedGames);
 
-  const allPairings: { black: string; white: string }[] = [];
-  const alreadyPaired = new Set<string>();
+  // Sort: score DESC, tpn ASC
+  const sorted = [...states].toSorted((a, b) =>
+    a.score === b.score ? a.tpn - b.tpn : b.score - a.score,
+  );
 
-  // Get score groups
-  const groups = scoreGroups(toBePaired, games);
-  const order = limPairingOrder(groups, roundsPlayed);
+  // Index for O(1) lookup
+  const stateById = new Map<string, PlayerState>();
+  for (const s of sorted) stateById.set(s.id, s);
 
-  // Build mutable group arrays (maintaining ranked order within each group)
-  const groupMap = new Map<number, Player[]>();
-  for (const s of order) {
-    const groupPlayers = groups.get(s) ?? [];
-    // Sort within group by ranking position
-    const sortedGroup = [...groupPlayers].toSorted(
-      (a, b) => ranked.indexOf(a) - ranked.indexOf(b),
-    );
-    groupMap.set(s, sortedGroup);
+  const needsBye = sorted.length % 2 === 1;
+
+  // -------------------------------------------------------------------------
+  // Determine bye assignee
+  // -------------------------------------------------------------------------
+  let byeState: PlayerState | undefined;
+  if (needsBye) {
+    byeState = assignBye(sorted, normalisedGames, limByeTiebreak);
   }
 
-  // Track floaters flowing into each score group
-  const incomingFloaters = new Map<number, Player[]>();
+  const byeId = byeState?.id;
 
-  for (const currentScore of order) {
-    const baseGroup = groupMap.get(currentScore) ?? [];
-    const floaters = incomingFloaters.get(currentScore) ?? [];
+  // Remove bye recipient from the pairing pool
+  const pairedPool =
+    byeId === undefined ? sorted : sorted.filter((s) => s.id !== byeId);
 
-    // Merge incoming floaters with the current group
-    // Floaters from above (down-floaters) come first; from below (up-floaters) come last
-    const mergedGroup = [
-      ...floaters.filter((p) => !alreadyPaired.has(p.id)),
-      ...baseGroup.filter((p) => !alreadyPaired.has(p.id)),
-    ];
+  // Precompute score-group params once
+  const sgParameters = computeScoreGroupParameters(pairedPool);
+  const groupPositions = buildGroupPositions(pairedPool);
+  const groupSizes = buildGroupSizes(pairedPool);
 
-    if (mergedGroup.length === 0) {
-      continue;
-    }
+  // -------------------------------------------------------------------------
+  // Single global blossom pass
+  // -------------------------------------------------------------------------
+  const globalContext: LimContextFull = {
+    byeAssigneeScore: byeState?.score ?? 0,
+    currentBracketIds: new Set(pairedPool.map((s) => s.id)),
+    groupPositions,
+    groupSizes,
+    isSingleDownfloaterTheByeAssignee: false,
+    nextBracketIds: new Set(),
+    scoreGroupShifts: sgParameters.scoreGroupShifts,
+    scoreGroupSizeBits: sgParameters.scoreGroupSizeBits,
+    scoreGroupsShift: sgParameters.scoreGroupsShift,
+    totalRounds,
+    tournament: {
+      expectedRounds: totalRounds,
+      playedRounds: totalRounds - 1,
+    },
+  };
 
-    // Determine direction for this group
-    const median = medianScore(roundsPlayed);
-    let direction: Direction;
-    if (currentScore > median) {
-      direction = 'down';
-    } else if (currentScore < median) {
-      direction = 'up';
-    } else {
-      // Median group: use 'down' as default
-      direction = 'down';
-    }
+  const edges = buildEdges(pairedPool, globalContext);
+  const matching = runBlossom(pairedPool, edges, true);
 
-    // If odd count, select a floater before pairing (Article 2.3.4)
-    let groupToPair = mergedGroup;
-    let floaterOut: Player | undefined;
+  const allPairedTuples: [PlayerState, PlayerState][] = [];
+  const seen = new Set<string>();
 
-    if (mergedGroup.length % 2 !== 0) {
-      floaterOut = selectFloater(mergedGroup, direction);
-      if (floaterOut !== undefined) {
-        groupToPair = mergedGroup.filter((p) => p.id !== floaterOut?.id);
-      }
-    }
-
-    const { pairings, unpaired } = pairGroup(groupToPair, games, ranked);
-
-    for (const pairing of pairings) {
-      allPairings.push(pairing);
-      alreadyPaired.add(pairing.white);
-      alreadyPaired.add(pairing.black);
-    }
-
-    // Collect all players that need to float
-    const allUnpaired = [
-      ...unpaired,
-      ...(floaterOut === undefined ? [] : [floaterOut]),
-    ].filter((p) => !alreadyPaired.has(p.id));
-
-    // Route unpaired players to adjacent scoregroups
-    for (const player of allUnpaired) {
-      let targetScore: number | undefined;
-
-      if (direction === 'down') {
-        // Float to next lower-score group
-        targetScore = findNextScore(order, currentScore, 'down');
-        if (targetScore === undefined) {
-          // No lower group; float to next higher
-          targetScore = findNextScore(order, currentScore, 'up');
-        }
-      } else {
-        // Float to next higher-score group
-        targetScore = findNextScore(order, currentScore, 'up');
-        if (targetScore === undefined) {
-          // No higher group; float to next lower
-          targetScore = findNextScore(order, currentScore, 'down');
-        }
-      }
-
-      if (targetScore !== undefined) {
-        const existing = incomingFloaters.get(targetScore) ?? [];
-        existing.push(player);
-        incomingFloaters.set(targetScore, existing);
-      }
+  for (const s of pairedPool) {
+    if (seen.has(s.id)) continue;
+    const partnerId = matching.get(s.id);
+    if (partnerId !== undefined) {
+      seen.add(s.id);
+      seen.add(partnerId);
+      const a = stateById.get(s.id);
+      const b = stateById.get(partnerId);
+      if (a === undefined || b === undefined) continue;
+      allPairedTuples.push(a.tpn < b.tpn ? [a, b] : [b, a]);
     }
   }
 
-  // Any remaining unpaired players — do a best-effort pairing (allow rematches)
-  const remainingUnpaired = toBePaired.filter((p) => !alreadyPaired.has(p.id));
-  if (remainingUnpaired.length >= 2) {
-    const { pairings } = pairGroup(remainingUnpaired, games, ranked);
-    for (const pairing of pairings) {
-      allPairings.push(pairing);
-      alreadyPaired.add(pairing.white);
-      alreadyPaired.add(pairing.black);
-    }
-  }
+  // -------------------------------------------------------------------------
+  // Allocate colours
+  // -------------------------------------------------------------------------
+  const pairings = allPairedTuples.map(([a, b]) =>
+    allocateColor(a, b, LIM_COLOR_RULES, limRankCompare),
+  );
 
   return {
-    byes: byePlayer === undefined ? [] : [{ player: byePlayer.id }],
-    pairings: allPairings,
+    byes: byeId === undefined ? [] : [{ player: byeId }],
+    pairings,
   };
 }
 

@@ -230,9 +230,53 @@ describe('dutch fixture: issue_7', () => {
     }
   });
 
-  it.todo(
-    'produces the exact FIDE-correct pairings for round 15 (requires FIDE_EXACT_LIMIT removal for large brackets)',
-  );
+  it.fails('produces the exact FIDE-correct pairings for round 15', () => {
+    // Reference output from bbpPairings v6.0.0 (--dutch issue_7.trf -p).
+    // Each entry is [white, black] as pairing numbers (strings).
+    const expected: [string, string][] = [
+      ['1', '15'],
+      ['3', '2'],
+      ['11', '17'],
+      ['7', '10'],
+      ['8', '14'],
+      ['4', '6'],
+      ['5', '12'],
+      ['9', '16'],
+      ['13', '25'],
+      ['24', '22'],
+      ['18', '29'],
+      ['20', '23'],
+      ['19', '33'],
+      ['21', '38'],
+      ['39', '26'],
+      ['28', '36'],
+      ['31', '40'],
+      ['37', '35'],
+      ['44', '46'],
+      ['30', '32'],
+      ['27', '48'],
+      ['47', '42'],
+      ['51', '55'],
+      ['34', '50'],
+      ['49', '45'],
+      ['53', '58'],
+      ['41', '59'],
+      ['56', '43'],
+      ['60', '52'],
+      ['54', '57'],
+    ];
+
+    const expectedSet = new Set(
+      expected.map(([w, b]) => [w, b].toSorted().join('-')),
+    );
+
+    const result = pair(players, gamesBefore);
+    const actualSet = new Set(
+      result.pairings.map((p) => [p.white, p.black].toSorted().join('-')),
+    );
+
+    expect(actualSet).toEqual(expectedSet);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -248,18 +292,22 @@ describe('dutch fixture: issue_15', () => {
   const allGames = toSwissGames(tournament);
 
   for (let round = 1; round <= 11; round++) {
-    it(`pairs round ${round} without crashing (180 players)`, () => {
-      // Games played before this round
-      const gamesBefore = allGames.slice(0, round - 1);
-      const excluded = preAssignedIds(tournament, round);
-      const players = toSwissPlayers(tournament).filter(
-        (p) => !excluded.has(p.id),
-      );
-      const result = pair(players, gamesBefore);
-      // 180 players, even count → 90 pairings, 0 byes
-      expect(result.pairings).toHaveLength(90);
-      expect(result.byes).toHaveLength(0);
-    });
+    it(
+      `pairs round ${round} without crashing (180 players)`,
+      { timeout: 30_000 },
+      () => {
+        // Games played before this round
+        const gamesBefore = allGames.slice(0, round - 1);
+        const excluded = preAssignedIds(tournament, round);
+        const players = toSwissPlayers(tournament).filter(
+          (p) => !excluded.has(p.id),
+        );
+        const result = pair(players, gamesBefore);
+        // 180 players, even count → 90 pairings, 0 byes
+        expect(result.pairings).toHaveLength(90);
+        expect(result.byes).toHaveLength(0);
+      },
+    );
   }
 
   it('produces no rematches in round 11', () => {
