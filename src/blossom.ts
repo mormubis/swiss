@@ -127,12 +127,20 @@ function maxWeightMatching(
     if (maxEdgeWeight.compareTo(weight) < 0) maxEdgeWeight = weight;
   }
 
+  // ── Graph representation ──
+  // `endpoints`: Flat endpoint array — edge k has vertex `endpoints[2k]` and
+  // `endpoints[2k+1]`. The XOR trick (`p ^ 1`) gives the other endpoint of the
+  // same edge without storing explicit source/target fields.
   const endpoints: number[] = Array.from({ length: 2 * edgeCount });
   for (let index = 0; index < edgeCount; index++) {
     endpoints[2 * index] = edges[index]![0];
     endpoints[2 * index + 1] = edges[index]![1];
   }
 
+  // `neighborEdges`: Per-vertex list of endpoint indices for incident edges.
+  // `neighborEdges[v]` contains endpoint indices pointing TO v's neighbors.
+  // For edge k between u and v: `neighborEdges[u]` gets `2k+1` (points to v)
+  // and `neighborEdges[v]` gets `2k` (points to u).
   const neighborEdges: number[][] = Array.from(
     { length: vertexCount },
     () => [],
@@ -143,44 +151,82 @@ function maxWeightMatching(
     neighborEdges[v]!.push(2 * index);
   }
 
+  // ── Matching state ──
+  // `match[v]` = endpoint index of v's matched partner, or -1 if unmatched.
+  // If `match[v] = p`, then v is matched to `endpoints[p]`.
   const match: number[] = Array.from({ length: vertexCount }, () => -1);
+
+  // ── Labelling (alternating tree) ──
+  // `labels[i]` = 0 (free/unlabelled), 1 (S-vertex), or 2 (T-vertex).
+  // Indexed by both vertex IDs (0..vertexCount-1) and blossom IDs
+  // (vertexCount..2*vertexCount-1).
   const labels: number[] = Array.from({ length: 2 * vertexCount }, () => 0);
+  // `labelEndpoints[i]` = the endpoint index through which node i was reached
+  // during tree-growing. -1 for root S-vertices (unmatched).
   const labelEndpoints: number[] = Array.from(
     { length: 2 * vertexCount },
     () => -1,
   );
+
+  // ── Blossom structure ──
+  // `vertexTopBlossom`: Maps vertex → its outermost (top-level) blossom.
+  // Initially each vertex is its own trivial blossom (identity mapping).
   const vertexTopBlossom: number[] = Array.from(
     { length: vertexCount },
     (_, index) => index,
   );
+  // `blossomParent`: Parent blossom in the blossom tree, or -1 if top-level.
   const blossomParent: number[] = Array.from(
     { length: 2 * vertexCount },
     () => -1,
   );
+  // `blossomChildren`: Ordered list of sub-blossoms forming the odd cycle.
+  // undefined for trivial (single-vertex) blossoms.
   const blossomChildren: (number[] | undefined)[] = Array.from({
     length: 2 * vertexCount,
   });
+  // `blossomBase`: Base vertex of each blossom.
+  // For trivial blossoms, `blossomBase[v] = v`. Non-trivial blossoms start as -1.
   const blossomBase: number[] = [
     ...Array.from({ length: vertexCount }, (_, index) => index),
     ...Array.from({ length: vertexCount }, () => -1),
   ];
+  // `blossomEdgeEndpoints`: Endpoint indices connecting consecutive children in
+  // the blossom cycle (parallel to `blossomChildren`).
   const blossomEdgeEndpoints: (number[] | undefined)[] = Array.from({
     length: 2 * vertexCount,
   });
+
+  // ── Best-edge tracking ──
+  // `bestEdge[i]`: Best edge (minimum slack) from node i to an S-blossom.
+  // -1 if none known. Indexed over both vertices and blossoms.
   const bestEdge: number[] = Array.from({ length: 2 * vertexCount }, () => -1);
+  // `blossomBestEdges[b]`: List of best edges from each of blossom b's
+  // children to outside S-blossoms. Used when a blossom is contracted.
   const blossomBestEdges: (number[] | undefined)[] = Array.from({
     length: 2 * vertexCount,
   });
+
+  // ── Blossom ID pool ──
+  // `freeBlossom`: Stack of available non-trivial blossom IDs.
+  // Pop to allocate a new blossom, push to recycle an expanded one.
   const freeBlossom: number[] = Array.from(
     { length: vertexCount },
     (_, index) => vertexCount + index,
   );
+
+  // ── Dual variables ──
+  // `dual[v]` for v < vertexCount: vertex dual, initialised to maxEdgeWeight.
+  // `dual[b]` for b >= vertexCount: blossom dual, initialised to 0.
   const dual: DynamicUint[] = Array.from(
     { length: 2 * vertexCount },
     (_, index) => (index < vertexCount ? dualFrom(maxEdgeWeight) : dualZero()),
   );
 
+  // ── Per-stage state ──
+  // `edgeTight`: Whether edge k has zero slack (is "tight"). Reset each stage.
   const edgeTight: boolean[] = Array.from({ length: edgeCount }, () => false);
+  // `queue`: S-labelled vertices whose neighbors have not yet been scanned.
   let queue: number[] = [];
 
   function slack(edgeIndex: number): DynamicUint {
@@ -450,7 +496,8 @@ function maxWeightMatching(
         (((indexStep - endptrick) % children.length) + children.length) %
         children.length;
       const endpointIndex = cycleEndpoints[epmod]! ^ endptrick;
-      if (child >= vertexCount) augmentBlossom(child, endpoints[endpointIndex]!);
+      if (child >= vertexCount)
+        augmentBlossom(child, endpoints[endpointIndex]!);
       indexStep += jstep;
       const jmod2 =
         ((indexStep % children.length) + children.length) % children.length;
@@ -580,7 +627,11 @@ function maxWeightMatching(
           }
         }
       }
-      for (let blossomIndex = 0; blossomIndex < 2 * vertexCount; blossomIndex++) {
+      for (
+        let blossomIndex = 0;
+        blossomIndex < 2 * vertexCount;
+        blossomIndex++
+      ) {
         if (
           blossomParent[blossomIndex] === -1 &&
           labels[blossomIndex] === 1 &&
@@ -608,7 +659,8 @@ function maxWeightMatching(
           blossomBase[blossomIndex]! >= 0 &&
           blossomParent[blossomIndex] === -1 &&
           labels[blossomIndex] === 2 &&
-          (deltaType === -1 || dual[blossomIndex]!.compareTo(candidateDelta) < 0)
+          (deltaType === -1 ||
+            dual[blossomIndex]!.compareTo(candidateDelta) < 0)
         ) {
           candidateDelta = dual[blossomIndex]!.clone();
           deltaType = 4;
@@ -638,8 +690,12 @@ function maxWeightMatching(
         blossomIndex < 2 * vertexCount;
         blossomIndex++
       ) {
-        if (blossomBase[blossomIndex]! >= 0 && blossomParent[blossomIndex] === -1) {
-          if (labels[blossomIndex] === 1) dual[blossomIndex]!.add(candidateDelta);
+        if (
+          blossomBase[blossomIndex]! >= 0 &&
+          blossomParent[blossomIndex] === -1
+        ) {
+          if (labels[blossomIndex] === 1)
+            dual[blossomIndex]!.add(candidateDelta);
           else if (labels[blossomIndex] === 2)
             dual[blossomIndex]!.subtract(candidateDelta);
         }
