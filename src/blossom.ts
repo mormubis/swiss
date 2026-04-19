@@ -80,41 +80,37 @@
 
 import { DynamicUint } from './dynamic-uint.js';
 
-/**
- * Number of words pre-allocated for each dual variable.
- * Updated per invocation of maxWeightMatching based on the actual max edge
- * weight, ensuring dual variables can hold 2× the maximum edge weight plus
- * room for accumulated increments.
- */
-let DUAL_WORDS = 4;
-
-/** Returns a new DynamicUint zero with DUAL_WORDS capacity. */
-function dualZero(): DynamicUint {
-  return DynamicUint.zero(DUAL_WORDS);
-}
-
-/** Returns a new DynamicUint with DUAL_WORDS capacity, initialised to value. */
-function dualFrom(value: DynamicUint): DynamicUint {
-  const result = DynamicUint.zero(DUAL_WORDS);
-  result.add(value);
-  return result;
-}
-
 function maxWeightMatching(
   edges: [number, number, DynamicUint][],
   maxcardinality = false,
 ): number[] {
   if (edges.length === 0) return [];
 
+  // ── Dual variable precision ──
+  // Dual variables must hold values up to 2× the maximum edge weight.
+  // Compute the required word count from the input, then use closures
+  // to allocate DynamicUint values at the correct capacity.
+  let dualWords = 4;
+
+  function dualZero(): DynamicUint {
+    return DynamicUint.zero(dualWords);
+  }
+
+  function dualFrom(value: DynamicUint): DynamicUint {
+    const result = DynamicUint.zero(dualWords);
+    result.add(value);
+    return result;
+  }
+
   // Determine required word count: dual variables must hold 2× max edge weight.
-  // Compute a temporary max first (words-agnostic), then set DUAL_WORDS.
+  // Compute a temporary max first (words-agnostic), then set dualWords.
   let maxWords = 1;
   for (const edge of edges) {
     const w = edge[2];
     if (w.words > maxWords) maxWords = w.words;
   }
   // Need capacity for dualvar[u] + dualvar[v] - 2*w: 2 extra words for overflow.
-  DUAL_WORDS = maxWords + 2;
+  dualWords = maxWords + 2;
 
   const ZERO = dualZero();
 
