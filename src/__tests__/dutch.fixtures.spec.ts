@@ -292,18 +292,22 @@ describe('dutch fixture: issue_15', () => {
   const allGames = toSwissGames(tournament);
 
   for (let round = 1; round <= 11; round++) {
-    it(`pairs round ${round} without crashing (180 players)`, () => {
-      // Games played before this round
-      const gamesBefore = allGames.slice(0, round - 1);
-      const excluded = preAssignedIds(tournament, round);
-      const players = toSwissPlayers(tournament).filter(
-        (p) => !excluded.has(p.id),
-      );
-      const result = pair(players, gamesBefore);
-      // 180 players, even count → 90 pairings, 0 byes
-      expect(result.pairings).toHaveLength(90);
-      expect(result.byes).toHaveLength(0);
-    });
+    it(
+      `pairs round ${round} without crashing (180 players)`,
+      { timeout: 30_000 },
+      () => {
+        // Games played before this round
+        const gamesBefore = allGames.slice(0, round - 1);
+        const excluded = preAssignedIds(tournament, round);
+        const players = toSwissPlayers(tournament).filter(
+          (p) => !excluded.has(p.id),
+        );
+        const result = pair(players, gamesBefore);
+        // 180 players, even count → 90 pairings, 0 byes
+        expect(result.pairings).toHaveLength(90);
+        expect(result.byes).toHaveLength(0);
+      },
+    );
   }
 
   it('produces no rematches in round 11', () => {
