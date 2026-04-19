@@ -319,6 +319,19 @@ function maxWeightMatching(
     return base;
   }
 
+  /**
+   * Create a new blossom from the odd cycle discovered by edge `edgeIndex`
+   * connecting vertices in two branches that share base vertex `base`.
+   *
+   * Steps:
+   * 1. Trace from both edge endpoints back to `base`, collecting the
+   *    child blossoms and the endpoints connecting them into the cycle.
+   * 2. Allocate a new blossom ID from `freeBlossom`.
+   * 3. Reparent all children under the new blossom.
+   * 4. Reassign all leaf vertices to the new blossom.
+   * 5. Merge best-edge lists from all children to compute the new
+   *    blossom's best edges to outside S-blossoms.
+   */
   function addBlossom(base: number, edgeIndex: number): void {
     let [vertexU, vertexW] = edges[edgeIndex]!;
     const baseBlossom = vertexTopBlossom[base]!;
@@ -330,6 +343,7 @@ function maxWeightMatching(
     blossomParent[baseBlossom] = newBlossom;
     const path: number[] = [],
       cycleEndpoints: number[] = [];
+    // Trace path from vertexU's blossom back to the base blossom.
     while (blossomU !== baseBlossom) {
       blossomParent[blossomU] = newBlossom;
       path.push(blossomU);
@@ -338,9 +352,11 @@ function maxWeightMatching(
       blossomU = vertexTopBlossom[vertexU]!;
     }
     path.push(baseBlossom);
+    // Reverse so base blossom is at position 0 (cycle convention).
     path.reverse();
     cycleEndpoints.reverse();
     cycleEndpoints.push(2 * edgeIndex);
+    // Trace path from vertexW's blossom forward (other half of cycle).
     while (blossomW !== baseBlossom) {
       blossomParent[blossomW] = newBlossom;
       path.push(blossomW);
@@ -361,6 +377,7 @@ function maxWeightMatching(
       { length: 2 * vertexCount },
       () => -1,
     );
+    // Merge best-edge lists from all children into the new blossom.
     for (const childBlossom of path) {
       let edgeLists: number[][];
       if (blossomBestEdges[childBlossom] === undefined) {
@@ -401,6 +418,23 @@ function maxWeightMatching(
     }
   }
 
+  /**
+   * Expand (dissolve) blossom, restoring its children as independent nodes.
+   *
+   * Called in two contexts:
+   * - `endstage=true`: End-of-stage cleanup. Recursively expand any
+   *   zero-dual child blossoms. No relabelling needed.
+   * - `endstage=false`: During a dual update (delta type 4) when a
+   *   T-blossom's dual reaches zero. Must relabel the children to
+   *   maintain alternating tree structure.
+   *
+   * The relabelling logic (when endstage=false and label=T):
+   * 1. Find the "entry child" — the child through which the T-label
+   *    entered the blossom.
+   * 2. Walk the cycle in the direction that pairs children as T-S pairs.
+   * 3. The `endptrick` parity variable handles direction-dependent
+   *    flipping of endpoint indices.
+   */
   function expandBlossom(blossom: number, endstage: boolean): void {
     for (const child of blossomChildren[blossom]!) {
       blossomParent[child] = -1;
@@ -499,6 +533,18 @@ function maxWeightMatching(
     freeBlossom.push(blossom);
   }
 
+  /**
+   * Update the matching inside `blossom` to reflect that `vertex` is now
+   * matched to an external vertex.
+   *
+   * Rotates the blossom's internal matching so that `vertex`'s sub-blossom
+   * becomes the new base (position 0 in the children array). Walks the
+   * cycle from `vertex`'s position back to position 0, flipping
+   * matched/unmatched edges along the way.
+   *
+   * If any child along the path is itself a non-trivial blossom,
+   * recursively augments it too.
+   */
   function augmentBlossom(blossom: number, vertex: number): void {
     let child = vertex;
     while (blossomParent[child]! !== blossom) child = blossomParent[child]!;
