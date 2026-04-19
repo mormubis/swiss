@@ -811,6 +811,45 @@ function maxWeightMatching(
     }
   }
 
+  /**
+   * Act on the chosen delta type to make progress:
+   *
+   * - Type 2: An edge from a free vertex to an S-blossom became tight.
+   *   Add the free vertex to the scan queue.
+   * - Type 3: An edge between two S-blossoms became tight. Add one
+   *   endpoint to the queue (it will be processed in the next scan).
+   * - Type 4: A T-blossom's dual reached zero. Expand it, exposing its
+   *   children for potential augmenting paths.
+   * - Type 1: No progress possible. (Handled by caller as termination.)
+   */
+  function handleDelta(
+    deltaType: number,
+    deltaEdge: number,
+    deltaBlossom: number,
+  ): void {
+    switch (deltaType) {
+      case 2: {
+        edgeTight[deltaEdge] = true;
+        const [edgeU, edgeV] = edges[deltaEdge]!;
+        const index = labels[vertexTopBlossom[edgeU]!] === 0 ? edgeV : edgeU;
+        queue.push(index);
+        break;
+      }
+      case 3: {
+        edgeTight[deltaEdge] = true;
+        queue.push(edges[deltaEdge]![0]);
+        break;
+      }
+      case 4: {
+        expandBlossom(deltaBlossom, false);
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+
   for (let stage = 0; stage < vertexCount; stage++) {
     labels.fill(0);
     bestEdge.fill(-1);
@@ -835,32 +874,7 @@ function maxWeightMatching(
       if (deltaType === -1) break;
 
       applyDualUpdate(delta);
-
-      switch (deltaType) {
-        case 1: {
-          break;
-        }
-        case 2: {
-          edgeTight[deltaEdge] = true;
-          const [edgeU, edgeV] = edges[deltaEdge]!;
-          const index = labels[vertexTopBlossom[edgeU]!] === 0 ? edgeV : edgeU;
-          queue.push(index);
-          break;
-        }
-        case 3: {
-          edgeTight[deltaEdge] = true;
-          queue.push(edges[deltaEdge]![0]);
-          break;
-        }
-        case 4: {
-          expandBlossom(deltaBlossom, false);
-          break;
-        }
-        default: {
-          break;
-        }
-      }
-
+      handleDelta(deltaType, deltaEdge, deltaBlossom);
       if (deltaType === 1) break;
     }
 
