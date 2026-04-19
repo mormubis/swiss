@@ -73,6 +73,17 @@ class DynamicUint {
     return 0;
   }
 
+  copyFrom(other: DynamicUint): this {
+    if (other.#data.length > this.#data.length) {
+      this.#data = new Uint32Array(other.#data.length);
+    }
+    for (let index = 0; index < this.#data.length; index++) {
+      this.#data[index] =
+        index < other.#data.length ? (other.#data[index] ?? 0) : 0;
+    }
+    return this;
+  }
+
   static from(value: number): DynamicUint {
     const lo = value >>> 0;
     const hi = Math.floor(value / 0x1_00_00_00_00) >>> 0;
@@ -88,11 +99,19 @@ class DynamicUint {
     return new DynamicUint(data);
   }
 
+  gt(other: DynamicUint): boolean {
+    return this.compareTo(other) > 0;
+  }
+
   isZero(): boolean {
     for (const word of this.#data) {
       if (word !== 0) return false;
     }
     return true;
+  }
+
+  lt(other: DynamicUint): boolean {
+    return this.compareTo(other) < 0;
   }
 
   or(value: number | DynamicUint): this {
@@ -218,6 +237,14 @@ class DynamicUint {
       }
     }
     return this;
+  }
+
+  toBigInt(): bigint {
+    let result = 0n;
+    for (let index = this.#data.length - 1; index >= 0; index--) {
+      result = (result << 32n) | BigInt(this.#data[index] ?? 0);
+    }
+    return result;
   }
 
   static zero(words: number): DynamicUint {
