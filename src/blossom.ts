@@ -82,7 +82,7 @@ import { DynamicUint } from './dynamic-uint.js';
 
 function maxWeightMatching(
   edges: [number, number, DynamicUint][],
-  maxcardinality = false,
+  maxCardinality = false,
 ): number[] {
   if (edges.length === 0) return [];
 
@@ -106,8 +106,8 @@ function maxWeightMatching(
   // Compute a temporary max first (words-agnostic), then set dualWords.
   let maxWords = 1;
   for (const edge of edges) {
-    const w = edge[2];
-    if (w.words > maxWords) maxWords = w.words;
+    const weight = edge[2];
+    if (weight.words > maxWords) maxWords = weight.words;
   }
   // Need capacity for dual[u] + dual[v] - 2*w: 2 extra words for overflow.
   dualWords = maxWords + 2;
@@ -116,31 +116,31 @@ function maxWeightMatching(
 
   const edgeCount = edges.length;
   let vertexCount = 0;
-  for (const [index, index_] of edges) {
-    if (index >= vertexCount) vertexCount = index + 1;
-    if (index_ >= vertexCount) vertexCount = index_ + 1;
+  for (const [u, v] of edges) {
+    if (u >= vertexCount) vertexCount = u + 1;
+    if (v >= vertexCount) vertexCount = v + 1;
   }
 
   let maxEdgeWeight: DynamicUint = ZERO.clone();
   for (const edge of edges) {
-    const w = edge[2];
-    if (maxEdgeWeight.compareTo(w) < 0) maxEdgeWeight = w;
+    const weight = edge[2];
+    if (maxEdgeWeight.compareTo(weight) < 0) maxEdgeWeight = weight;
   }
 
   const endpoints: number[] = Array.from({ length: 2 * edgeCount });
-  for (let k = 0; k < edgeCount; k++) {
-    endpoints[2 * k] = edges[k]![0];
-    endpoints[2 * k + 1] = edges[k]![1];
+  for (let index = 0; index < edgeCount; index++) {
+    endpoints[2 * index] = edges[index]![0];
+    endpoints[2 * index + 1] = edges[index]![1];
   }
 
   const neighborEdges: number[][] = Array.from(
     { length: vertexCount },
     () => [],
   );
-  for (let k = 0; k < edgeCount; k++) {
-    const [index, index_] = edges[k]!;
-    neighborEdges[index]!.push(2 * k + 1);
-    neighborEdges[index_]!.push(2 * k);
+  for (let index = 0; index < edgeCount; index++) {
+    const [u, v] = edges[index]!;
+    neighborEdges[u]!.push(2 * index + 1);
+    neighborEdges[v]!.push(2 * index);
   }
 
   const match: number[] = Array.from({ length: vertexCount }, () => -1);
@@ -183,243 +183,258 @@ function maxWeightMatching(
   const edgeTight: boolean[] = Array.from({ length: edgeCount }, () => false);
   let queue: number[] = [];
 
-  function slack(k: number): DynamicUint {
-    const [index, index_, wt] = edges[k]!;
+  function slack(edgeIndex: number): DynamicUint {
+    const [u, v, weight] = edges[edgeIndex]!;
     // slack = dual[u] + dual[v] - 2*w
-    return dual[index]!.clone()
-      .add(dual[index_]!)
-      .subtract(wt.clone().shiftGrow(1));
+    return dual[u]!.clone().add(dual[v]!).subtract(weight.clone().shiftGrow(1));
   }
 
-  function* blossomLeaves(b: number): Generator<number> {
-    if (b < vertexCount) yield b;
+  function* blossomLeaves(node: number): Generator<number> {
+    if (node < vertexCount) yield node;
     else
-      for (const t of blossomChildren[b]!) {
-        if (t < vertexCount) yield t;
-        else yield* blossomLeaves(t);
+      for (const child of blossomChildren[node]!) {
+        if (child < vertexCount) yield child;
+        else yield* blossomLeaves(child);
       }
   }
 
-  function assignLabel(w: number, t: number, p: number): void {
-    const b = vertexTopBlossom[w]!;
-    labels[w] = labels[b] = t;
-    labelEndpoints[w] = labelEndpoints[b] = p;
-    bestEdge[w] = bestEdge[b] = -1;
-    if (t === 1) queue.push(...blossomLeaves(b));
-    else if (t === 2) {
-      const base = blossomBase[b]!;
+  function assignLabel(
+    vertex: number,
+    labelType: number,
+    endpointIndex: number,
+  ): void {
+    const blossom = vertexTopBlossom[vertex]!;
+    labels[vertex] = labels[blossom] = labelType;
+    labelEndpoints[vertex] = labelEndpoints[blossom] = endpointIndex;
+    bestEdge[vertex] = bestEdge[blossom] = -1;
+    if (labelType === 1) queue.push(...blossomLeaves(blossom));
+    else if (labelType === 2) {
+      const base = blossomBase[blossom]!;
       assignLabel(endpoints[match[base]!]!, 1, match[base]! ^ 1);
     }
   }
 
-  function scanBlossom(v: number, w: number): number {
+  function scanBlossom(vertexA: number, vertexB: number): number {
     const path: number[] = [];
     let base = -1,
-      vv = v,
-      ww = w;
-    while (vv !== -1 || ww !== -1) {
-      let b = vertexTopBlossom[vv === -1 ? ww : vv]!;
-      if (labels[b]! & 4) {
-        base = blossomBase[b]!;
+      cursorA = vertexA,
+      cursorB = vertexB;
+    while (cursorA !== -1 || cursorB !== -1) {
+      let blossom = vertexTopBlossom[cursorA === -1 ? cursorB : cursorA]!;
+      if (labels[blossom]! & 4) {
+        base = blossomBase[blossom]!;
         break;
       }
-      path.push(b);
-      labels[b] = 5;
-      if (labelEndpoints[b] === -1) vv = -1;
+      path.push(blossom);
+      labels[blossom] = 5;
+      if (labelEndpoints[blossom] === -1) cursorA = -1;
       else {
-        vv = endpoints[labelEndpoints[b]!]!;
-        b = vertexTopBlossom[vv]!;
-        vv = endpoints[labelEndpoints[b]!]!;
+        cursorA = endpoints[labelEndpoints[blossom]!]!;
+        blossom = vertexTopBlossom[cursorA]!;
+        cursorA = endpoints[labelEndpoints[blossom]!]!;
       }
-      if (ww !== -1) {
-        const temporary = vv;
-        vv = ww;
-        ww = temporary;
+      if (cursorB !== -1) {
+        const swap = cursorA;
+        cursorA = cursorB;
+        cursorB = swap;
       }
     }
-    for (const b of path) labels[b] = 1;
+    for (const blossom of path) labels[blossom] = 1;
     return base;
   }
 
-  function addBlossom(base: number, k: number): void {
-    let [v, w] = edges[k]!;
-    const bb = vertexTopBlossom[base]!;
-    let bv = vertexTopBlossom[v]!,
-      bw = vertexTopBlossom[w]!;
-    const b = freeBlossom.pop()!;
-    blossomBase[b] = base;
-    blossomParent[b] = -1;
-    blossomParent[bb] = b;
+  function addBlossom(base: number, edgeIndex: number): void {
+    let [vertexU, vertexW] = edges[edgeIndex]!;
+    const baseBlossom = vertexTopBlossom[base]!;
+    let blossomU = vertexTopBlossom[vertexU]!,
+      blossomW = vertexTopBlossom[vertexW]!;
+    const newBlossom = freeBlossom.pop()!;
+    blossomBase[newBlossom] = base;
+    blossomParent[newBlossom] = -1;
+    blossomParent[baseBlossom] = newBlossom;
     const path: number[] = [],
-      endps: number[] = [];
-    while (bv !== bb) {
-      blossomParent[bv] = b;
-      path.push(bv);
-      endps.push(labelEndpoints[bv]!);
-      v = endpoints[labelEndpoints[bv]!]!;
-      bv = vertexTopBlossom[v]!;
+      cycleEndpoints: number[] = [];
+    while (blossomU !== baseBlossom) {
+      blossomParent[blossomU] = newBlossom;
+      path.push(blossomU);
+      cycleEndpoints.push(labelEndpoints[blossomU]!);
+      vertexU = endpoints[labelEndpoints[blossomU]!]!;
+      blossomU = vertexTopBlossom[vertexU]!;
     }
-    path.push(bb);
+    path.push(baseBlossom);
     path.reverse();
-    endps.reverse();
-    endps.push(2 * k);
-    while (bw !== bb) {
-      blossomParent[bw] = b;
-      path.push(bw);
-      endps.push(labelEndpoints[bw]! ^ 1);
-      w = endpoints[labelEndpoints[bw]!]!;
-      bw = vertexTopBlossom[w]!;
+    cycleEndpoints.reverse();
+    cycleEndpoints.push(2 * edgeIndex);
+    while (blossomW !== baseBlossom) {
+      blossomParent[blossomW] = newBlossom;
+      path.push(blossomW);
+      cycleEndpoints.push(labelEndpoints[blossomW]! ^ 1);
+      vertexW = endpoints[labelEndpoints[blossomW]!]!;
+      blossomW = vertexTopBlossom[vertexW]!;
     }
-    labels[b] = 1;
-    labelEndpoints[b] = labelEndpoints[bb]!;
-    dual[b] = dualZero();
-    blossomChildren[b] = path;
-    blossomEdgeEndpoints[b] = endps;
-    for (const vv of blossomLeaves(b)) {
-      if (labels[vertexTopBlossom[vv]!] === 2) queue.push(vv);
-      vertexTopBlossom[vv] = b;
+    labels[newBlossom] = 1;
+    labelEndpoints[newBlossom] = labelEndpoints[baseBlossom]!;
+    dual[newBlossom] = dualZero();
+    blossomChildren[newBlossom] = path;
+    blossomEdgeEndpoints[newBlossom] = cycleEndpoints;
+    for (const leaf of blossomLeaves(newBlossom)) {
+      if (labels[vertexTopBlossom[leaf]!] === 2) queue.push(leaf);
+      vertexTopBlossom[leaf] = newBlossom;
     }
     const bestEdgeTo: number[] = Array.from(
       { length: 2 * vertexCount },
       () => -1,
     );
-    for (const bvv of path) {
-      let nblists: number[][];
-      if (blossomBestEdges[bvv] === undefined) {
-        nblists = [];
-        for (const vv of blossomLeaves(bvv))
-          nblists.push(neighborEdges[vv]!.map((pp) => pp >> 1));
-      } else nblists = [blossomBestEdges[bvv]];
-      for (const nblist of nblists)
-        for (const kk of nblist) {
-          const [iiRaw, jjRaw] = edges[kk]!;
-          const jj = vertexTopBlossom[jjRaw] === b ? iiRaw : jjRaw;
-          const bj = vertexTopBlossom[jj]!;
-          if (bj !== b && labels[bj] === 1) {
-            const kkslack = slack(kk);
+    for (const childBlossom of path) {
+      let edgeLists: number[][];
+      if (blossomBestEdges[childBlossom] === undefined) {
+        edgeLists = [];
+        for (const leaf of blossomLeaves(childBlossom))
+          edgeLists.push(neighborEdges[leaf]!.map((ep) => ep >> 1));
+      } else edgeLists = [blossomBestEdges[childBlossom]];
+      for (const edgeList of edgeLists)
+        for (const candidateEdge of edgeList) {
+          const [endpointA, endpointB] = edges[candidateEdge]!;
+          const outerVertex =
+            vertexTopBlossom[endpointB] === newBlossom ? endpointA : endpointB;
+          const outerBlossom = vertexTopBlossom[outerVertex]!;
+          if (outerBlossom !== newBlossom && labels[outerBlossom] === 1) {
+            const candidateSlack = slack(candidateEdge);
             if (
-              bestEdgeTo[bj] === -1 ||
-              kkslack.compareTo(slack(bestEdgeTo[bj]!)) < 0
+              bestEdgeTo[outerBlossom] === -1 ||
+              candidateSlack.compareTo(slack(bestEdgeTo[outerBlossom]!)) < 0
             )
-              bestEdgeTo[bj] = kk;
+              bestEdgeTo[outerBlossom] = candidateEdge;
           }
         }
-      blossomBestEdges[bvv] = undefined;
-      bestEdge[bvv] = -1;
+      blossomBestEdges[childBlossom] = undefined;
+      bestEdge[childBlossom] = -1;
     }
-    const bestList: number[] = [];
-    for (const kk of bestEdgeTo) if (kk !== -1) bestList.push(kk);
-    blossomBestEdges[b] = bestList;
-    bestEdge[b] = -1;
-    for (const kk of bestList) {
-      const kkslack = slack(kk);
-      if (bestEdge[b] === -1 || kkslack.compareTo(slack(bestEdge[b]!)) < 0)
-        bestEdge[b] = kk;
+    const collectedBestEdges: number[] = [];
+    for (const candidateEdge of bestEdgeTo)
+      if (candidateEdge !== -1) collectedBestEdges.push(candidateEdge);
+    blossomBestEdges[newBlossom] = collectedBestEdges;
+    bestEdge[newBlossom] = -1;
+    for (const candidateEdge of collectedBestEdges) {
+      const candidateSlack = slack(candidateEdge);
+      if (
+        bestEdge[newBlossom] === -1 ||
+        candidateSlack.compareTo(slack(bestEdge[newBlossom]!)) < 0
+      )
+        bestEdge[newBlossom] = candidateEdge;
     }
   }
 
-  function expandBlossom(b: number, endstage: boolean): void {
-    for (const s of blossomChildren[b]!) {
-      blossomParent[s] = -1;
-      if (s < vertexCount) vertexTopBlossom[s] = s;
-      else if (endstage && dual[s]!.isZero()) expandBlossom(s, endstage);
-      else for (const vv of blossomLeaves(s)) vertexTopBlossom[vv] = s;
+  function expandBlossom(blossom: number, endstage: boolean): void {
+    for (const child of blossomChildren[blossom]!) {
+      blossomParent[child] = -1;
+      if (child < vertexCount) vertexTopBlossom[child] = child;
+      else if (endstage && dual[child]!.isZero())
+        expandBlossom(child, endstage);
+      else
+        for (const leaf of blossomLeaves(child)) vertexTopBlossom[leaf] = child;
     }
-    if (!endstage && labels[b] === 2) {
-      const entrychild = vertexTopBlossom[endpoints[labelEndpoints[b]! ^ 1]!]!;
-      const childs = blossomChildren[b]!,
-        endpsArray = blossomEdgeEndpoints[b]!;
-      let index = childs.indexOf(entrychild),
+    if (!endstage && labels[blossom] === 2) {
+      const entryChild =
+        vertexTopBlossom[endpoints[labelEndpoints[blossom]! ^ 1]!]!;
+      const children = blossomChildren[blossom]!,
+        cycleEndpoints = blossomEdgeEndpoints[blossom]!;
+      let index = children.indexOf(entryChild),
         jstep: number,
         endptrick: number;
       if (index & 1) {
-        index -= childs.length;
+        index -= children.length;
         jstep = 1;
         endptrick = 0;
       } else {
         jstep = -1;
         endptrick = 1;
       }
-      let p = labelEndpoints[b]!;
+      let endpointIndex = labelEndpoints[blossom]!;
       while (index !== 0) {
-        labels[endpoints[p ^ 1]!] = 0;
+        labels[endpoints[endpointIndex ^ 1]!] = 0;
         labels[
           endpoints[
-            endpsArray[
-              (((index - endptrick) % childs.length) + childs.length) %
-                childs.length
+            cycleEndpoints[
+              (((index - endptrick) % children.length) + children.length) %
+                children.length
             ]! ^
               endptrick ^
               1
           ]!
         ] = 0;
-        assignLabel(endpoints[p ^ 1]!, 2, p);
+        assignLabel(endpoints[endpointIndex ^ 1]!, 2, endpointIndex);
         edgeTight[
-          endpsArray[
-            (((index - endptrick) % childs.length) + childs.length) %
-              childs.length
+          cycleEndpoints[
+            (((index - endptrick) % children.length) + children.length) %
+              children.length
           ]! >> 1
         ] = true;
         index += jstep;
-        p =
-          endpsArray[
-            (((index - endptrick) % childs.length) + childs.length) %
-              childs.length
+        endpointIndex =
+          cycleEndpoints[
+            (((index - endptrick) % children.length) + children.length) %
+              children.length
           ]! ^ endptrick;
-        edgeTight[p >> 1] = true;
+        edgeTight[endpointIndex >> 1] = true;
         index += jstep;
       }
-      const jmod = ((index % childs.length) + childs.length) % childs.length;
-      const bv = childs[jmod]!;
-      labels[endpoints[p ^ 1]!] = labels[bv] = 2;
-      labelEndpoints[endpoints[p ^ 1]!] = labelEndpoints[bv] = p;
-      bestEdge[bv] = -1;
+      const jmod =
+        ((index % children.length) + children.length) % children.length;
+      const childBlossom = children[jmod]!;
+      labels[endpoints[endpointIndex ^ 1]!] = labels[childBlossom] = 2;
+      labelEndpoints[endpoints[endpointIndex ^ 1]!] = labelEndpoints[
+        childBlossom
+      ] = endpointIndex;
+      bestEdge[childBlossom] = -1;
       index += jstep;
       while (
-        childs[((index % childs.length) + childs.length) % childs.length] !==
-        entrychild
+        children[
+          ((index % children.length) + children.length) % children.length
+        ] !== entryChild
       ) {
-        const jmod2 = ((index % childs.length) + childs.length) % childs.length;
-        const bvv = childs[jmod2]!;
-        if (labels[bvv] === 1) {
+        const jmod2 =
+          ((index % children.length) + children.length) % children.length;
+        const loopBlossom = children[jmod2]!;
+        if (labels[loopBlossom] === 1) {
           index += jstep;
           continue;
         }
-        let foundV = -1;
-        for (const vv of blossomLeaves(bvv)) {
-          if (labels[vv] !== 0) {
-            foundV = vv;
+        let labeledVertex = -1;
+        for (const leaf of blossomLeaves(loopBlossom)) {
+          if (labels[leaf] !== 0) {
+            labeledVertex = leaf;
             break;
           }
         }
-        if (foundV >= 0) {
-          labels[foundV] = 0;
-          labels[endpoints[match[blossomBase[bvv]!]!]!] = 0;
-          assignLabel(foundV, 2, labelEndpoints[foundV]!);
+        if (labeledVertex >= 0) {
+          labels[labeledVertex] = 0;
+          labels[endpoints[match[blossomBase[loopBlossom]!]!]!] = 0;
+          assignLabel(labeledVertex, 2, labelEndpoints[labeledVertex]!);
         }
         index += jstep;
       }
     }
-    labels[b] = labelEndpoints[b] = -1;
-    blossomChildren[b] = blossomEdgeEndpoints[b] = undefined;
-    blossomBase[b] = -1;
-    blossomBestEdges[b] = undefined;
-    bestEdge[b] = -1;
-    freeBlossom.push(b);
+    labels[blossom] = labelEndpoints[blossom] = -1;
+    blossomChildren[blossom] = blossomEdgeEndpoints[blossom] = undefined;
+    blossomBase[blossom] = -1;
+    blossomBestEdges[blossom] = undefined;
+    bestEdge[blossom] = -1;
+    freeBlossom.push(blossom);
   }
 
-  function augmentBlossom(b: number, v: number): void {
-    let t = v;
-    while (blossomParent[t]! !== b) t = blossomParent[t]!;
-    if (t >= vertexCount) augmentBlossom(t, v);
-    const childs = blossomChildren[b]!,
-      endpsArray = blossomEdgeEndpoints[b]!;
-    const index = childs.indexOf(t);
+  function augmentBlossom(blossom: number, vertex: number): void {
+    let child = vertex;
+    while (blossomParent[child]! !== blossom) child = blossomParent[child]!;
+    if (child >= vertexCount) augmentBlossom(child, vertex);
+    const children = blossomChildren[blossom]!,
+      cycleEndpoints = blossomEdgeEndpoints[blossom]!;
+    const index = children.indexOf(child);
     let indexStep = index,
       jstep: number,
       endptrick: number;
     if (index & 1) {
-      indexStep -= childs.length;
+      indexStep -= children.length;
       jstep = 1;
       endptrick = 0;
     } else {
@@ -429,194 +444,225 @@ function maxWeightMatching(
     while (indexStep !== 0) {
       indexStep += jstep;
       const jmod =
-        ((indexStep % childs.length) + childs.length) % childs.length;
-      t = childs[jmod]!;
+        ((indexStep % children.length) + children.length) % children.length;
+      child = children[jmod]!;
       const epmod =
-        (((indexStep - endptrick) % childs.length) + childs.length) %
-        childs.length;
-      const p = endpsArray[epmod]! ^ endptrick;
-      if (t >= vertexCount) augmentBlossom(t, endpoints[p]!);
+        (((indexStep - endptrick) % children.length) + children.length) %
+        children.length;
+      const endpointIndex = cycleEndpoints[epmod]! ^ endptrick;
+      if (child >= vertexCount) augmentBlossom(child, endpoints[endpointIndex]!);
       indexStep += jstep;
       const jmod2 =
-        ((indexStep % childs.length) + childs.length) % childs.length;
-      t = childs[jmod2]!;
-      if (t >= vertexCount) augmentBlossom(t, endpoints[p ^ 1]!);
-      match[endpoints[p]!] = p ^ 1;
-      match[endpoints[p ^ 1]!] = p;
+        ((indexStep % children.length) + children.length) % children.length;
+      child = children[jmod2]!;
+      if (child >= vertexCount)
+        augmentBlossom(child, endpoints[endpointIndex ^ 1]!);
+      match[endpoints[endpointIndex]!] = endpointIndex ^ 1;
+      match[endpoints[endpointIndex ^ 1]!] = endpointIndex;
     }
-    blossomChildren[b] = [...childs.slice(index), ...childs.slice(0, index)];
-    blossomEdgeEndpoints[b] = [
-      ...endpsArray.slice(index),
-      ...endpsArray.slice(0, index),
+    blossomChildren[blossom] = [
+      ...children.slice(index),
+      ...children.slice(0, index),
     ];
-    blossomBase[b] = blossomBase[childs[index]!]!;
+    blossomEdgeEndpoints[blossom] = [
+      ...cycleEndpoints.slice(index),
+      ...cycleEndpoints.slice(0, index),
+    ];
+    blossomBase[blossom] = blossomBase[children[index]!]!;
   }
 
-  function augmentMatching(k: number): void {
-    const [v, w] = edges[k]!;
-    for (const [s0, p0] of [
-      [v, 2 * k + 1],
-      [w, 2 * k],
+  function augmentMatching(edgeIndex: number): void {
+    const [vertexU, vertexW] = edges[edgeIndex]!;
+    for (const [startVertex, startEndpoint] of [
+      [vertexU, 2 * edgeIndex + 1],
+      [vertexW, 2 * edgeIndex],
     ] as [number, number][]) {
-      let s = s0,
-        p = p0;
+      let vertex = startVertex,
+        endpointIndex = startEndpoint;
       while (true) {
-        const bs = vertexTopBlossom[s]!;
-        if (bs >= vertexCount) augmentBlossom(bs, s);
-        match[s] = p;
-        if (labelEndpoints[bs] === -1) break;
-        const t = endpoints[labelEndpoints[bs]!]!;
-        const bt = vertexTopBlossom[t]!;
-        s = endpoints[labelEndpoints[bt]!]!;
-        const index2 = endpoints[labelEndpoints[bt]! ^ 1]!;
-        if (bt >= vertexCount) augmentBlossom(bt, index2);
-        match[index2] = labelEndpoints[bt]!;
-        p = labelEndpoints[bt]! ^ 1;
+        const blossom = vertexTopBlossom[vertex]!;
+        if (blossom >= vertexCount) augmentBlossom(blossom, vertex);
+        match[vertex] = endpointIndex;
+        if (labelEndpoints[blossom] === -1) break;
+        const tVertex = endpoints[labelEndpoints[blossom]!]!;
+        const tBlossom = vertexTopBlossom[tVertex]!;
+        vertex = endpoints[labelEndpoints[tBlossom]!]!;
+        const mateVertex = endpoints[labelEndpoints[tBlossom]! ^ 1]!;
+        if (tBlossom >= vertexCount) augmentBlossom(tBlossom, mateVertex);
+        match[mateVertex] = labelEndpoints[tBlossom]!;
+        endpointIndex = labelEndpoints[tBlossom]! ^ 1;
       }
     }
   }
 
-  for (let _t = 0; _t < vertexCount; _t++) {
+  for (let stage = 0; stage < vertexCount; stage++) {
     labels.fill(0);
     bestEdge.fill(-1);
-    for (let bb = vertexCount; bb < 2 * vertexCount; bb++)
-      blossomBestEdges[bb] = undefined;
+    for (
+      let blossomIndex = vertexCount;
+      blossomIndex < 2 * vertexCount;
+      blossomIndex++
+    )
+      blossomBestEdges[blossomIndex] = undefined;
     edgeTight.fill(false);
     queue = [];
-    for (let vv = 0; vv < vertexCount; vv++)
-      if (match[vv] === -1 && labels[vertexTopBlossom[vv]!] === 0)
-        assignLabel(vv, 1, -1);
+    for (let v = 0; v < vertexCount; v++)
+      if (match[v] === -1 && labels[vertexTopBlossom[v]!] === 0)
+        assignLabel(v, 1, -1);
     let augmented = false;
 
     while (true) {
       while (queue.length > 0 && !augmented) {
-        const v = queue.pop()!;
-        for (const p of neighborEdges[v]!) {
-          const k = p >> 1,
-            w = endpoints[p]!;
-          if (vertexTopBlossom[v] === vertexTopBlossom[w]) continue;
-          let kslack: DynamicUint | undefined;
-          if (!edgeTight[k]) {
-            kslack = slack(k);
-            if (kslack.compareTo(ZERO) <= 0) edgeTight[k] = true;
+        const vertex = queue.pop()!;
+        for (const neighborEndpoint of neighborEdges[vertex]!) {
+          const edgeIndex = neighborEndpoint >> 1,
+            neighbor = endpoints[neighborEndpoint]!;
+          if (vertexTopBlossom[vertex] === vertexTopBlossom[neighbor]) continue;
+          let edgeSlack: DynamicUint | undefined;
+          if (!edgeTight[edgeIndex]) {
+            edgeSlack = slack(edgeIndex);
+            if (edgeSlack.compareTo(ZERO) <= 0) edgeTight[edgeIndex] = true;
           }
-          if (edgeTight[k]) {
-            if (labels[vertexTopBlossom[w]!] === 0) assignLabel(w, 2, p ^ 1);
-            else if (labels[vertexTopBlossom[w]!] === 1) {
-              const base = scanBlossom(v, w);
-              if (base >= 0) addBlossom(base, k);
+          if (edgeTight[edgeIndex]) {
+            if (labels[vertexTopBlossom[neighbor]!] === 0)
+              assignLabel(neighbor, 2, neighborEndpoint ^ 1);
+            else if (labels[vertexTopBlossom[neighbor]!] === 1) {
+              const base = scanBlossom(vertex, neighbor);
+              if (base >= 0) addBlossom(base, edgeIndex);
               else {
-                augmentMatching(k);
+                augmentMatching(edgeIndex);
                 augmented = true;
                 break;
               }
-            } else if (labels[w] === 0) {
-              labels[w] = 2;
-              labelEndpoints[w] = p ^ 1;
+            } else if (labels[neighbor] === 0) {
+              labels[neighbor] = 2;
+              labelEndpoints[neighbor] = neighborEndpoint ^ 1;
             }
-          } else if (labels[vertexTopBlossom[w]!] === 1) {
-            const bb = vertexTopBlossom[v]!;
+          } else if (labels[vertexTopBlossom[neighbor]!] === 1) {
+            const blossomIndex = vertexTopBlossom[vertex]!;
             if (
-              bestEdge[bb] === -1 ||
-              kslack!.compareTo(slack(bestEdge[bb]!)) < 0
+              bestEdge[blossomIndex] === -1 ||
+              edgeSlack!.compareTo(slack(bestEdge[blossomIndex]!)) < 0
             )
-              bestEdge[bb] = k;
+              bestEdge[blossomIndex] = edgeIndex;
           } else if (
-            labels[w] === 0 &&
-            (bestEdge[w] === -1 || kslack!.compareTo(slack(bestEdge[w]!)) < 0)
+            labels[neighbor] === 0 &&
+            (bestEdge[neighbor] === -1 ||
+              edgeSlack!.compareTo(slack(bestEdge[neighbor]!)) < 0)
           )
-            bestEdge[w] = k;
+            bestEdge[neighbor] = edgeIndex;
         }
       }
       if (augmented) break;
 
-      let deltatype = -1,
-        delta: DynamicUint = ZERO.clone(),
-        deltaedge = -1,
-        deltablossom = -1;
+      let deltaType = -1,
+        candidateDelta: DynamicUint = ZERO.clone(),
+        deltaEdge = -1,
+        deltaBlossom = -1;
 
-      if (!maxcardinality) {
-        deltatype = 1;
-        delta = dual[0]!.clone();
-        for (let vv = 1; vv < vertexCount; vv++)
-          if (dual[vv]!.compareTo(delta) < 0) delta = dual[vv]!.clone();
+      if (!maxCardinality) {
+        deltaType = 1;
+        candidateDelta = dual[0]!.clone();
+        for (let v = 1; v < vertexCount; v++)
+          if (dual[v]!.compareTo(candidateDelta) < 0)
+            candidateDelta = dual[v]!.clone();
       }
-      for (let vv = 0; vv < vertexCount; vv++) {
-        if (labels[vertexTopBlossom[vv]!] === 0 && bestEdge[vv] !== -1) {
-          const d = slack(bestEdge[vv]!);
-          if (deltatype === -1 || d.compareTo(delta) < 0) {
-            delta = d;
-            deltatype = 2;
-            deltaedge = bestEdge[vv]!;
+      for (let v = 0; v < vertexCount; v++) {
+        if (labels[vertexTopBlossom[v]!] === 0 && bestEdge[v] !== -1) {
+          const candidateDeltaValue = slack(bestEdge[v]!);
+          if (
+            deltaType === -1 ||
+            candidateDeltaValue.compareTo(candidateDelta) < 0
+          ) {
+            candidateDelta = candidateDeltaValue;
+            deltaType = 2;
+            deltaEdge = bestEdge[v]!;
           }
         }
       }
-      for (let bb = 0; bb < 2 * vertexCount; bb++) {
+      for (let blossomIndex = 0; blossomIndex < 2 * vertexCount; blossomIndex++) {
         if (
-          blossomParent[bb] === -1 &&
-          labels[bb] === 1 &&
-          bestEdge[bb] !== -1
+          blossomParent[blossomIndex] === -1 &&
+          labels[blossomIndex] === 1 &&
+          bestEdge[blossomIndex] !== -1
         ) {
-          const d = slack(bestEdge[bb]!).clone().shiftRight(1);
-          if (deltatype === -1 || d.compareTo(delta) < 0) {
-            delta = d;
-            deltatype = 3;
-            deltaedge = bestEdge[bb]!;
+          const candidateDeltaValue = slack(bestEdge[blossomIndex]!)
+            .clone()
+            .shiftRight(1);
+          if (
+            deltaType === -1 ||
+            candidateDeltaValue.compareTo(candidateDelta) < 0
+          ) {
+            candidateDelta = candidateDeltaValue;
+            deltaType = 3;
+            deltaEdge = bestEdge[blossomIndex]!;
           }
         }
       }
-      for (let bb = vertexCount; bb < 2 * vertexCount; bb++) {
+      for (
+        let blossomIndex = vertexCount;
+        blossomIndex < 2 * vertexCount;
+        blossomIndex++
+      ) {
         if (
-          blossomBase[bb]! >= 0 &&
-          blossomParent[bb] === -1 &&
-          labels[bb] === 2 &&
-          (deltatype === -1 || dual[bb]!.compareTo(delta) < 0)
+          blossomBase[blossomIndex]! >= 0 &&
+          blossomParent[blossomIndex] === -1 &&
+          labels[blossomIndex] === 2 &&
+          (deltaType === -1 || dual[blossomIndex]!.compareTo(candidateDelta) < 0)
         ) {
-          delta = dual[bb]!.clone();
-          deltatype = 4;
-          deltablossom = bb;
+          candidateDelta = dual[blossomIndex]!.clone();
+          deltaType = 4;
+          deltaBlossom = blossomIndex;
         }
       }
 
-      if (deltatype === -1) {
-        if (maxcardinality) {
-          deltatype = 1;
-          delta = dual[0]!.clone();
-          for (let vv = 1; vv < vertexCount; vv++)
-            if (dual[vv]!.compareTo(delta) < 0) delta = dual[vv]!.clone();
-          if (delta.compareTo(ZERO) < 0) delta = ZERO.clone();
+      if (deltaType === -1) {
+        if (maxCardinality) {
+          deltaType = 1;
+          candidateDelta = dual[0]!.clone();
+          for (let v = 1; v < vertexCount; v++)
+            if (dual[v]!.compareTo(candidateDelta) < 0)
+              candidateDelta = dual[v]!.clone();
+          if (candidateDelta.compareTo(ZERO) < 0) candidateDelta = ZERO.clone();
         } else break;
       }
 
-      for (let vv = 0; vv < vertexCount; vv++) {
-        if (labels[vertexTopBlossom[vv]!] === 1) dual[vv]!.subtract(delta);
-        else if (labels[vertexTopBlossom[vv]!] === 2) dual[vv]!.add(delta);
+      for (let v = 0; v < vertexCount; v++) {
+        if (labels[vertexTopBlossom[v]!] === 1)
+          dual[v]!.subtract(candidateDelta);
+        else if (labels[vertexTopBlossom[v]!] === 2)
+          dual[v]!.add(candidateDelta);
       }
-      for (let bb = vertexCount; bb < 2 * vertexCount; bb++) {
-        if (blossomBase[bb]! >= 0 && blossomParent[bb] === -1) {
-          if (labels[bb] === 1) dual[bb]!.add(delta);
-          else if (labels[bb] === 2) dual[bb]!.subtract(delta);
+      for (
+        let blossomIndex = vertexCount;
+        blossomIndex < 2 * vertexCount;
+        blossomIndex++
+      ) {
+        if (blossomBase[blossomIndex]! >= 0 && blossomParent[blossomIndex] === -1) {
+          if (labels[blossomIndex] === 1) dual[blossomIndex]!.add(candidateDelta);
+          else if (labels[blossomIndex] === 2)
+            dual[blossomIndex]!.subtract(candidateDelta);
         }
       }
 
-      switch (deltatype) {
+      switch (deltaType) {
         case 1: {
           break;
         }
         case 2: {
-          edgeTight[deltaedge] = true;
-          const [edgeU, edgeV] = edges[deltaedge]!;
+          edgeTight[deltaEdge] = true;
+          const [edgeU, edgeV] = edges[deltaEdge]!;
           const index = labels[vertexTopBlossom[edgeU]!] === 0 ? edgeV : edgeU;
           queue.push(index);
           break;
         }
         case 3: {
-          edgeTight[deltaedge] = true;
-          queue.push(edges[deltaedge]![0]);
+          edgeTight[deltaEdge] = true;
+          queue.push(edges[deltaEdge]![0]);
           break;
         }
         case 4: {
-          expandBlossom(deltablossom, false);
+          expandBlossom(deltaBlossom, false);
           break;
         }
         default: {
@@ -624,25 +670,29 @@ function maxWeightMatching(
         }
       }
 
-      if (deltatype === 1) break;
+      if (deltaType === 1) break;
     }
 
     if (!augmented) break;
 
-    for (let bb = vertexCount; bb < 2 * vertexCount; bb++) {
+    for (
+      let blossomIndex = vertexCount;
+      blossomIndex < 2 * vertexCount;
+      blossomIndex++
+    ) {
       if (
-        blossomParent[bb] === -1 &&
-        blossomBase[bb]! >= 0 &&
-        labels[bb] === 1 &&
-        dual[bb]!.isZero()
+        blossomParent[blossomIndex] === -1 &&
+        blossomBase[blossomIndex]! >= 0 &&
+        labels[blossomIndex] === 1 &&
+        dual[blossomIndex]!.isZero()
       )
-        expandBlossom(bb, true);
+        expandBlossom(blossomIndex, true);
     }
   }
 
   const result: number[] = Array.from({ length: vertexCount }, () => -1);
-  for (let vv = 0; vv < vertexCount; vv++)
-    if (match[vv] !== -1) result[vv] = endpoints[match[vv]!]!;
+  for (let v = 0; v < vertexCount; v++)
+    if (match[v] !== -1) result[v] = endpoints[match[v]!]!;
   return result;
 }
 
