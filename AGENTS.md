@@ -104,6 +104,42 @@ pnpm lint && pnpm test && pnpm build
 
 ---
 
+## Trace System
+
+All `pair()` functions accept an optional third parameter
+`options?: PairOptions` with a `trace` callback for structured observability:
+
+```ts
+import { pair } from '@echecs/swiss/dutch';
+import type { TraceEvent } from '@echecs/swiss/dutch';
+
+const events: TraceEvent[] = [];
+const result = pair(players, games, { trace: (e) => events.push(e) });
+
+// filter by layer
+const blossomEvents = events.filter((e) => e.type.startsWith('blossom:'));
+const dutchEvents = events.filter(
+  (e) => e.type.startsWith('dutch:') || e.type.startsWith('pairing:'),
+);
+```
+
+### Event types
+
+**Blossom layer** (`blossom:*`): `stage-start`, `augmenting-path`, `formed`,
+`expanded`, `dual-update`, `delta`, `complete`.
+
+**Pairing layer** (`pairing:*`): `score-groups`, `bye-assigned`,
+`blossom-invoked`, `blossom-result`, `edge-weights`, `pair-finalized`,
+`color-allocated`.
+
+**Dutch-specific** (`dutch:*`): `bracket-enter`, `mdp-selected`, `weight-boost`,
+`fallback`.
+
+When no callback is provided, zero overhead — no event objects are constructed.
+The trace does not affect pairing results.
+
+---
+
 ## Unified Pairing Interface
 
 All pairing systems consumed by `@echecs/tournament` must conform to:

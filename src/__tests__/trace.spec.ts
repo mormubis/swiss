@@ -141,7 +141,7 @@ describe('blossom trace', () => {
 
 describe('dutch trace', () => {
   it('emits expected event types for C5 fixture', () => {
-    const tournament = parse(dutchC5);
+    const tournament = parse(dutchC5)!;
     const players = toSwissPlayers(tournament);
     const allGames = toSwissGames(tournament);
     const priorGames = allGames.slice(0, 2);
@@ -162,7 +162,7 @@ describe('dutch trace', () => {
   });
 
   it('produces the same pairings with and without trace', () => {
-    const tournament = parse(dutchC5);
+    const tournament = parse(dutchC5)!;
     const players = toSwissPlayers(tournament);
     const allGames = toSwissGames(tournament);
     const priorGames = allGames.slice(0, 2);
