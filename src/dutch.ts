@@ -807,9 +807,9 @@ function pair(
     if (++bracketIterCount > np * 10) break; // safety guard: prevents infinite loops
 
     // nextScoreGroupBegin: number of players in playersByIndex before adding next group
-    let nextScoreGroupBegin = playersByIndex.length;
+    const nextScoreGroupBegin = playersByIndex.length;
     // nextScoreGroupBeginVertex: global index in pairedSorted where next score group starts
-    let nextScoreGroupBeginVertex =
+    const nextScoreGroupBeginVertex =
       scoreGroupBeginVertex + (nextScoreGroupBegin - scoreGroupBegin);
 
     // Add next score group to playersByIndex
@@ -821,19 +821,14 @@ function pair(
       sgIterator++;
     }
 
-    // Edge case: if all players are still MDPs and no new group was added,
-    // reset scoreGroupBegin to 0 so they can be matched as a homogeneous group.
-    // This happens when downfloaters accumulate at the bottom.
+    // When all score groups are exhausted and no new group was added, the
+    // remaining players are downfloaters that could not be paired in any
+    // bracket. Break out and let the fallback code handle them.
     if (
       nextScoreGroupBegin === scoreGroupBegin &&
       playersByIndex.length === scoreGroupBegin
     ) {
-      // All remaining are MDPs, no current group, no new group.
-      // Treat all as the current group so they can pair with each other.
-      scoreGroupBegin = 0;
-      nextScoreGroupBegin = playersByIndex.length;
-      // nextScoreGroupBeginVertex: ensure it's > all player global indices
-      nextScoreGroupBeginVertex = np; // np = number of paired players = max global index + 1
+      break;
     }
 
     if (trace) {
@@ -1267,13 +1262,42 @@ function pair(
       }
     }
 
-    // firstGroupEnd: index in remainder where the "lower group" starts
-    // (players paired with smaller indices = upper group; firstGroupEnd = remainderPairs)
-    const firstGroupEnd = remainderPairs;
+    // -----------------------------------------------------------------------
+    // Remainder: apply edgeWeightComputer ordering bits
+    // -----------------------------------------------------------------------
 
-    // Count exchanges from the initial blossom (before ordering bits).
+    // Update edge weights with ordering preferences (exchange minimization).
+    for (let opIndex = 0; opIndex < remainder.length; opIndex++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const opponentLocal = remainder[opIndex]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const opponentGlobal = playersByIndex[opponentLocal]!;
+      let playerRemainderIndex = 0;
+      for (let pIndex = 0; pIndex < opIndex; pIndex++) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const playerLocal = remainder[pIndex]!;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const playerGlobal = playersByIndex[playerLocal]!;
+        const ew = edgeWeightComputer(
+          playerLocal,
+          opponentLocal,
+          playerRemainderIndex,
+          remainderPairs,
+        );
+        matrix.set(playerGlobal, opponentGlobal, ew);
+        playerRemainderIndex++;
+      }
+    }
+
+    currentPhase = 'bracket-ordering';
+    stableMatching = runBlossom();
+
+    // -----------------------------------------------------------------------
+    // Exchange selection (FIDE Article 4.3)
+    // -----------------------------------------------------------------------
+
     let exchangeCount = 0;
-    for (let pIndex = 0; pIndex < firstGroupEnd; pIndex++) {
+    for (let pIndex = 0; pIndex < remainderPairs; pIndex++) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const playerLocal = remainder[pIndex]!;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -1287,53 +1311,61 @@ function pair(
       }
     }
 
-    // Fast path (no exchanges): finalize directly from the initial blossom,
-    // skipping edgeWeightComputer and a second blossom call.
-    if (exchangeCount === 0) {
-      // Finalize all within-bracket upper-group pairs
-      for (const element of remainder) {
+    if (exchangeCount > 0) {
+      // --- S1 exchange: probe lower S1 players (bottom-up) ---
+      let exchangesRemaining = exchangeCount;
+      let playerRemainderIndex = remainderPairs;
+      for (
+        let pIndex = remainderPairs - 1;
+        pIndex >= 0 && exchangesRemaining > 0;
+        pIndex--
+      ) {
+        playerRemainderIndex--;
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const playerLocal = element!;
+        const playerLocal = remainder[pIndex]!;
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const playerGlobal = playersByIndex[playerLocal]!;
-        const matchG = stableMatching[playerGlobal] ?? -1;
-        if (
-          matchG > playerGlobal &&
-          matchG < nextScoreGroupBeginVertex &&
-          !matched[playerGlobal] &&
-          !matched[matchG]
-        ) {
-          matched[playerGlobal] = true;
-          matched[matchG] = true;
-          matchedPairs.push([playerGlobal, matchG]);
-          if (trace) {
-            trace({
-              phase: currentPhase,
-              playerA: pairedSorted[playerGlobal]?.id ?? '',
-              playerB: pairedSorted[matchG]?.id ?? '',
-              system: 'dutch',
-              type: 'pairing:pair-finalized',
-            });
-          }
-        }
-      }
-    } else {
-      // Exchanges needed: run edgeWeightComputer + second blossom to handle.
-      // Full exchange-selection loops (per bbpPairings) are not implemented;
-      // the ordering-weight blossom gives a valid (though possibly sub-optimal
-      // w.r.t. BSN exchange order) result.
 
-      for (let opIndex = 0; opIndex < remainder.length; opIndex++) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const opponentLocal = remainder[opIndex]!;
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const opponentGlobal = playersByIndex[opponentLocal]!;
-        let playerRemainderIndex = 0;
-        for (let pIndex = 0; pIndex < opIndex; pIndex++) {
+        const isMatchedWithin =
+          (stableMatching[playerGlobal] ?? -1) > playerGlobal &&
+          (stableMatching[playerGlobal] ?? -1) < nextScoreGroupBeginVertex;
+
+        if (isMatchedWithin) {
+          for (let oIndex = pIndex + 1; oIndex < remainder.length; oIndex++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentLocal = remainder[oIndex]!;
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentGlobal = playersByIndex[opponentLocal]!;
+            const ew = edgeWeightComputer(
+              playerLocal,
+              opponentLocal,
+              playerRemainderIndex,
+              remainderPairs,
+            );
+            if (!ew.isZero()) {
+              ew.subtract(1);
+              matrix.set(playerGlobal, opponentGlobal, ew);
+            }
+          }
+          currentPhase = 'bracket-exchange-s1';
+          stableMatching = runBlossom();
+        }
+
+        const exchange =
+          (stableMatching[playerGlobal] ?? -1) <= playerGlobal ||
+          (stableMatching[playerGlobal] ?? -1) >= nextScoreGroupBeginVertex;
+        if (exchange) exchangesRemaining--;
+
+        for (let oIndex = pIndex + 1; oIndex < remainder.length; oIndex++) {
           // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          const playerLocal = remainder[pIndex]!;
+          const opponentLocal = remainder[oIndex]!;
           // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          const playerGlobal = playersByIndex[playerLocal]!;
+          const opponentGlobal = playersByIndex[opponentLocal]!;
+          if (exchange) {
+            (baseEdgeWeights[opponentLocal] as (DynamicUint | undefined)[])[
+              playerLocal
+            ] = DynamicUint.from(0);
+          }
           const ew = edgeWeightComputer(
             playerLocal,
             opponentLocal,
@@ -1341,38 +1373,211 @@ function pair(
             remainderPairs,
           );
           matrix.set(playerGlobal, opponentGlobal, ew);
-          playerRemainderIndex++;
         }
       }
 
-      currentPhase = 'bracket-ordering';
-      stableMatching = runBlossom();
-
-      // Finalize all within-bracket upper-group pairs from the ordering blossom
-      for (const element of remainder) {
+      // --- S2 exchange: probe higher S2 players (top-down) ---
+      exchangesRemaining = exchangeCount;
+      let remIndex = remainderPairs;
+      for (
+        let pIndex = remainderPairs;
+        pIndex < remainder.length && exchangesRemaining > 1;
+        pIndex++
+      ) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const playerLocal = element!;
+        const playerLocal = remainder[pIndex]!;
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const playerGlobal = playersByIndex[playerLocal]!;
-        const matchG = stableMatching[playerGlobal] ?? -1;
-        if (
-          matchG > playerGlobal &&
-          matchG < nextScoreGroupBeginVertex &&
-          !matched[playerGlobal] &&
-          !matched[matchG]
-        ) {
-          matched[playerGlobal] = true;
-          matched[matchG] = true;
-          matchedPairs.push([playerGlobal, matchG]);
-          if (trace) {
-            trace({
-              phase: currentPhase,
-              playerA: pairedSorted[playerGlobal]?.id ?? '',
-              playerB: pairedSorted[matchG]?.id ?? '',
-              system: 'dutch',
-              type: 'pairing:pair-finalized',
-            });
+
+        const alreadyExchanged =
+          (stableMatching[playerGlobal] ?? -1) > playerGlobal &&
+          (stableMatching[playerGlobal] ?? -1) < nextScoreGroupBeginVertex;
+
+        if (!alreadyExchanged) {
+          for (let oIndex = pIndex + 1; oIndex < remainder.length; oIndex++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentLocal = remainder[oIndex]!;
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentGlobal = playersByIndex[opponentLocal]!;
+            const ew = edgeWeightComputer(
+              playerLocal,
+              opponentLocal,
+              remIndex,
+              remainderPairs,
+            );
+            if (!ew.isZero()) {
+              ew.add(1);
+              matrix.set(playerGlobal, opponentGlobal, ew);
+            }
           }
+          currentPhase = 'bracket-exchange-s2';
+          stableMatching = runBlossom();
+        }
+
+        const exchange =
+          (stableMatching[playerGlobal] ?? -1) > playerGlobal &&
+          (stableMatching[playerGlobal] ?? -1) < nextScoreGroupBeginVertex;
+
+        if (exchange) {
+          exchangesRemaining--;
+          for (let oIndex = 0; oIndex < pIndex; oIndex++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentLocal = remainder[oIndex]!;
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentGlobal = playersByIndex[opponentLocal]!;
+            (baseEdgeWeights[playerLocal] as (DynamicUint | undefined)[])[
+              opponentLocal
+            ] = DynamicUint.from(0);
+            matrix.set(playerGlobal, opponentGlobal, DynamicUint.from(0));
+          }
+          for (
+            let opIndex = nextScoreGroupBegin;
+            opIndex < playersByIndex.length;
+            opIndex++
+          ) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentGlobal = playersByIndex[opIndex]!;
+            (baseEdgeWeights[opIndex] as (DynamicUint | undefined)[])[
+              playerLocal
+            ] = DynamicUint.from(0);
+            matrix.set(playerGlobal, opponentGlobal, DynamicUint.from(0));
+          }
+        }
+
+        if (!alreadyExchanged) {
+          for (let oIndex = pIndex + 1; oIndex < remainder.length; oIndex++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentLocal = remainder[oIndex]!;
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const opponentGlobal = playersByIndex[opponentLocal]!;
+            const ew = edgeWeightComputer(
+              playerLocal,
+              opponentLocal,
+              remIndex,
+              remainderPairs,
+            );
+            matrix.set(playerGlobal, opponentGlobal, ew);
+          }
+        }
+        remIndex++;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Remainder Phase A: finalize exchange decisions + reset ordering bits
+    //
+    // For each pair in the remainder, if the S1 player is NOT matched within
+    // the bracket (exchanged to downfloater) or the S2 player IS matched
+    // within the bracket (exchanged to S1), zero the base edge weight.
+    // Then restore the matrix to the (possibly zeroed) base weights.
+    // (Mirrors bbpPairings lines 1509-1543.)
+    // -----------------------------------------------------------------------
+    for (let pIndex = 0; pIndex < remainder.length; pIndex++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const playerLocal = remainder[pIndex]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const playerGlobal = playersByIndex[playerLocal]!;
+
+      for (let oIndex = pIndex + 1; oIndex < remainder.length; oIndex++) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const opponentLocal = remainder[oIndex]!;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const opponentGlobal = playersByIndex[opponentLocal]!;
+
+        const playerNotMatched =
+          stableMatching[playerGlobal] === undefined ||
+          (stableMatching[playerGlobal] ?? -1) <= playerGlobal ||
+          (stableMatching[playerGlobal] ?? -1) >= nextScoreGroupBeginVertex;
+        const opponentMatched =
+          (stableMatching[opponentGlobal] ?? -1) > opponentGlobal &&
+          (stableMatching[opponentGlobal] ?? -1) < nextScoreGroupBeginVertex;
+
+        if (playerNotMatched || opponentMatched) {
+          (baseEdgeWeights[opponentLocal] as (DynamicUint | undefined)[])[
+            playerLocal
+          ] = DynamicUint.from(0);
+        }
+
+        const base = (
+          baseEdgeWeights[opponentLocal] as (DynamicUint | undefined)[]
+        )[playerLocal];
+        matrix.set(
+          playerGlobal,
+          opponentGlobal,
+          base === undefined ? DynamicUint.from(0) : base.clone(),
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Remainder Phase B: per-player finalization with blossom re-runs
+    //
+    // For each S1 player that is matched within the bracket, boost edges
+    // to S2 opponents (higher-ranked get larger addend), run blossom, and
+    // finalizePair. (Mirrors bbpPairings lines 1545-1599.)
+    // -----------------------------------------------------------------------
+    currentPhase = 'bracket-remainder';
+
+    for (const playerLocal of remainder) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const playerGlobal = playersByIndex[playerLocal]!;
+
+      if (
+        (stableMatching[playerGlobal] ?? -1) <= playerGlobal ||
+        (stableMatching[playerGlobal] ?? -1) >= nextScoreGroupBeginVertex
+      ) {
+        continue;
+      }
+
+      let addend = 0;
+      for (let oIndex = remainder.length - 1; oIndex >= 0; oIndex--) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const opponentLocal = remainder[oIndex]!;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const opponentGlobal = playersByIndex[opponentLocal]!;
+
+        if (opponentLocal <= playerLocal || matched[opponentGlobal]) {
+          continue;
+        }
+
+        const base = (
+          baseEdgeWeights[opponentLocal] as (DynamicUint | undefined)[]
+        )[playerLocal];
+        if (base !== undefined && !base.isZero()) {
+          const boosted = base.clone();
+          boosted.add(addend);
+          matrix.set(playerGlobal, opponentGlobal, boosted);
+        }
+        addend++;
+      }
+
+      stableMatching = runBlossom();
+
+      const matchGlobal = stableMatching[playerGlobal] ?? -1;
+      if (
+        matchGlobal >= 0 &&
+        matchGlobal !== playerGlobal &&
+        !matched[playerGlobal] &&
+        !matched[matchGlobal]
+      ) {
+        matched[playerGlobal] = true;
+        matched[matchGlobal] = true;
+        finalizePair(
+          playerGlobal,
+          matchGlobal,
+          matrix,
+          maxEdgeWeight,
+          playersByIndex,
+        );
+        matchedPairs.push([playerGlobal, matchGlobal]);
+        if (trace) {
+          trace({
+            phase: currentPhase,
+            playerA: pairedSorted[playerGlobal]?.id ?? '',
+            playerB: pairedSorted[matchGlobal]?.id ?? '',
+            system: 'dutch',
+            type: 'pairing:pair-finalized',
+          });
         }
       }
     }

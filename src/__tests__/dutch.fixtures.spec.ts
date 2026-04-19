@@ -18,6 +18,7 @@ import dutchC9 from './fixtures/dutch_2025_C9.trf?raw';
 import issue15 from './fixtures/issue_15.trf?raw';
 import issue7 from './fixtures/issue_7.trf?raw';
 
+import type { TraceEvent } from '../trace.js';
 import type { Game, Player } from '../types.js';
 import type { Tournament } from '@echecs/trf';
 
@@ -103,6 +104,10 @@ function preAssignedIds(
     }
   }
   return ids;
+}
+
+function isRemainderPhase(phase: string): boolean {
+  return phase === 'bracket-remainder' || phase === 'bracket-ordering';
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +233,50 @@ describe('dutch fixture: issue_7', () => {
         `rematch detected: ${pairing.white} vs ${pairing.black}`,
       ).toBe(false);
     }
+  });
+
+  it('does not spin the bracket loop when unmatched players remain', () => {
+    const events: TraceEvent[] = [];
+    pair(players, gamesBefore, { trace: (event) => events.push(event) });
+
+    const bracketEnters = events.filter(
+      (event) => event.type === 'dutch:bracket-enter',
+    );
+    expect(bracketEnters.length).toBeLessThan(50);
+  });
+
+  it('finalizes each remainder pair individually with blossom re-runs', () => {
+    const events: TraceEvent[] = [];
+    pair(players, gamesBefore, { trace: (event) => events.push(event) });
+
+    const remainderFinalizations = events.filter(
+      (event) =>
+        event.type === 'pairing:pair-finalized' &&
+        isRemainderPhase(event.phase),
+    );
+
+    expect(remainderFinalizations.length).toBeGreaterThan(0);
+
+    let blossomCountInRemainder = 0;
+    let finalizationCountInRemainder = 0;
+    for (const event of events) {
+      if (
+        event.type === 'pairing:blossom-invoked' &&
+        isRemainderPhase(event.phase)
+      ) {
+        blossomCountInRemainder++;
+      }
+      if (
+        event.type === 'pairing:pair-finalized' &&
+        isRemainderPhase(event.phase)
+      ) {
+        finalizationCountInRemainder++;
+      }
+    }
+
+    expect(blossomCountInRemainder).toBeGreaterThanOrEqual(
+      finalizationCountInRemainder,
+    );
   });
 
   it.fails('produces the exact FIDE-correct pairings for round 15', () => {
