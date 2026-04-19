@@ -676,6 +676,108 @@ function maxWeightMatching(
     return false;
   }
 
+  /**
+   * Compute the minimum dual variable adjustment (delta) that will make
+   * progress possible.
+   *
+   * Delta types:
+   * - Type 1: Minimum vertex dual among all vertices. When this reaches
+   *   zero, no further augmentations are possible (optimality reached).
+   * - Type 2: Slack of the best edge from a free vertex to an S-blossom.
+   *   Making this edge tight lets the free vertex join an alternating tree.
+   * - Type 3: Half the slack of the best edge between two S-blossoms.
+   *   Making this edge tight either creates a new blossom or finds an
+   *   augmenting path.
+   * - Type 4: Dual variable of a T-blossom. When this reaches zero, the
+   *   blossom can be expanded.
+   *
+   * @returns The delta type (-1 if none), delta value, associated edge,
+   *   and associated blossom.
+   */
+  function computeDelta(): {
+    delta: DynamicUint;
+    deltaBlossom: number;
+    deltaEdge: number;
+    deltaType: number;
+  } {
+    let deltaType = -1,
+      candidateDelta: DynamicUint = ZERO.clone(),
+      deltaEdge = -1,
+      deltaBlossom = -1;
+
+    if (!maxCardinality) {
+      deltaType = 1;
+      candidateDelta = dual[0]!.clone();
+      for (let v = 1; v < vertexCount; v++)
+        if (dual[v]!.compareTo(candidateDelta) < 0)
+          candidateDelta = dual[v]!.clone();
+    }
+    for (let v = 0; v < vertexCount; v++) {
+      if (labels[vertexTopBlossom[v]!] === 0 && bestEdge[v] !== -1) {
+        const candidateDeltaValue = slack(bestEdge[v]!);
+        if (
+          deltaType === -1 ||
+          candidateDeltaValue.compareTo(candidateDelta) < 0
+        ) {
+          candidateDelta = candidateDeltaValue;
+          deltaType = 2;
+          deltaEdge = bestEdge[v]!;
+        }
+      }
+    }
+    for (let blossomIndex = 0; blossomIndex < 2 * vertexCount; blossomIndex++) {
+      if (
+        blossomParent[blossomIndex] === -1 &&
+        labels[blossomIndex] === 1 &&
+        bestEdge[blossomIndex] !== -1
+      ) {
+        const candidateDeltaValue = slack(bestEdge[blossomIndex]!)
+          .clone()
+          .shiftRight(1);
+        if (
+          deltaType === -1 ||
+          candidateDeltaValue.compareTo(candidateDelta) < 0
+        ) {
+          candidateDelta = candidateDeltaValue;
+          deltaType = 3;
+          deltaEdge = bestEdge[blossomIndex]!;
+        }
+      }
+    }
+    for (
+      let blossomIndex = vertexCount;
+      blossomIndex < 2 * vertexCount;
+      blossomIndex++
+    ) {
+      if (
+        blossomBase[blossomIndex]! >= 0 &&
+        blossomParent[blossomIndex] === -1 &&
+        labels[blossomIndex] === 2 &&
+        (deltaType === -1 || dual[blossomIndex]!.compareTo(candidateDelta) < 0)
+      ) {
+        candidateDelta = dual[blossomIndex]!.clone();
+        deltaType = 4;
+        deltaBlossom = blossomIndex;
+      }
+    }
+
+    if (deltaType === -1) {
+      if (maxCardinality) {
+        deltaType = 1;
+        candidateDelta = dual[0]!.clone();
+        for (let v = 1; v < vertexCount; v++)
+          if (dual[v]!.compareTo(candidateDelta) < 0)
+            candidateDelta = dual[v]!.clone();
+        if (candidateDelta.compareTo(ZERO) < 0) candidateDelta = ZERO.clone();
+      } else {
+        // Signal caller to break out of the inner while loop.
+        return { delta: candidateDelta, deltaBlossom, deltaEdge, deltaType };
+      }
+    }
+
+    return { delta: candidateDelta, deltaBlossom, deltaEdge, deltaType };
+  }
+
   for (let stage = 0; stage < vertexCount; stage++) {
     labels.fill(0);
     bestEdge.fill(-1);
@@ -696,88 +798,12 @@ function maxWeightMatching(
       augmented = scanNeighbors();
       if (augmented) break;
 
-      let deltaType = -1,
-        candidateDelta: DynamicUint = ZERO.clone(),
-        deltaEdge = -1,
-        deltaBlossom = -1;
-
-      if (!maxCardinality) {
-        deltaType = 1;
-        candidateDelta = dual[0]!.clone();
-        for (let v = 1; v < vertexCount; v++)
-          if (dual[v]!.compareTo(candidateDelta) < 0)
-            candidateDelta = dual[v]!.clone();
-      }
-      for (let v = 0; v < vertexCount; v++) {
-        if (labels[vertexTopBlossom[v]!] === 0 && bestEdge[v] !== -1) {
-          const candidateDeltaValue = slack(bestEdge[v]!);
-          if (
-            deltaType === -1 ||
-            candidateDeltaValue.compareTo(candidateDelta) < 0
-          ) {
-            candidateDelta = candidateDeltaValue;
-            deltaType = 2;
-            deltaEdge = bestEdge[v]!;
-          }
-        }
-      }
-      for (
-        let blossomIndex = 0;
-        blossomIndex < 2 * vertexCount;
-        blossomIndex++
-      ) {
-        if (
-          blossomParent[blossomIndex] === -1 &&
-          labels[blossomIndex] === 1 &&
-          bestEdge[blossomIndex] !== -1
-        ) {
-          const candidateDeltaValue = slack(bestEdge[blossomIndex]!)
-            .clone()
-            .shiftRight(1);
-          if (
-            deltaType === -1 ||
-            candidateDeltaValue.compareTo(candidateDelta) < 0
-          ) {
-            candidateDelta = candidateDeltaValue;
-            deltaType = 3;
-            deltaEdge = bestEdge[blossomIndex]!;
-          }
-        }
-      }
-      for (
-        let blossomIndex = vertexCount;
-        blossomIndex < 2 * vertexCount;
-        blossomIndex++
-      ) {
-        if (
-          blossomBase[blossomIndex]! >= 0 &&
-          blossomParent[blossomIndex] === -1 &&
-          labels[blossomIndex] === 2 &&
-          (deltaType === -1 ||
-            dual[blossomIndex]!.compareTo(candidateDelta) < 0)
-        ) {
-          candidateDelta = dual[blossomIndex]!.clone();
-          deltaType = 4;
-          deltaBlossom = blossomIndex;
-        }
-      }
-
-      if (deltaType === -1) {
-        if (maxCardinality) {
-          deltaType = 1;
-          candidateDelta = dual[0]!.clone();
-          for (let v = 1; v < vertexCount; v++)
-            if (dual[v]!.compareTo(candidateDelta) < 0)
-              candidateDelta = dual[v]!.clone();
-          if (candidateDelta.compareTo(ZERO) < 0) candidateDelta = ZERO.clone();
-        } else break;
-      }
+      const { deltaType, delta, deltaEdge, deltaBlossom } = computeDelta();
+      if (deltaType === -1) break;
 
       for (let v = 0; v < vertexCount; v++) {
-        if (labels[vertexTopBlossom[v]!] === 1)
-          dual[v]!.subtract(candidateDelta);
-        else if (labels[vertexTopBlossom[v]!] === 2)
-          dual[v]!.add(candidateDelta);
+        if (labels[vertexTopBlossom[v]!] === 1) dual[v]!.subtract(delta);
+        else if (labels[vertexTopBlossom[v]!] === 2) dual[v]!.add(delta);
       }
       for (
         let blossomIndex = vertexCount;
@@ -788,10 +814,9 @@ function maxWeightMatching(
           blossomBase[blossomIndex]! >= 0 &&
           blossomParent[blossomIndex] === -1
         ) {
-          if (labels[blossomIndex] === 1)
-            dual[blossomIndex]!.add(candidateDelta);
+          if (labels[blossomIndex] === 1) dual[blossomIndex]!.add(delta);
           else if (labels[blossomIndex] === 2)
-            dual[blossomIndex]!.subtract(candidateDelta);
+            dual[blossomIndex]!.subtract(delta);
         }
       }
 
