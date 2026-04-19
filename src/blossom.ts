@@ -778,6 +778,39 @@ function maxWeightMatching(
     return { delta: candidateDelta, deltaBlossom, deltaEdge, deltaType };
   }
 
+  /**
+   * Apply the dual variable adjustment `delta` to maintain complementary
+   * slackness:
+   *
+   * - S-vertices (label=1): subtract delta (they "pay" for tight edges).
+   * - T-vertices (label=2): add delta (they "receive" compensation).
+   * - S-blossoms (label=1): add delta to blossom dual.
+   * - T-blossoms (label=2): subtract delta from blossom dual.
+   *
+   * The opposite signs for blossoms vs. vertices maintain the invariant
+   * that contracting a blossom doesn't change any edge's slack.
+   */
+  function applyDualUpdate(delta: DynamicUint): void {
+    for (let v = 0; v < vertexCount; v++) {
+      if (labels[vertexTopBlossom[v]!] === 1) dual[v]!.subtract(delta);
+      else if (labels[vertexTopBlossom[v]!] === 2) dual[v]!.add(delta);
+    }
+    for (
+      let blossomIndex = vertexCount;
+      blossomIndex < 2 * vertexCount;
+      blossomIndex++
+    ) {
+      if (
+        blossomBase[blossomIndex]! >= 0 &&
+        blossomParent[blossomIndex] === -1
+      ) {
+        if (labels[blossomIndex] === 1) dual[blossomIndex]!.add(delta);
+        else if (labels[blossomIndex] === 2)
+          dual[blossomIndex]!.subtract(delta);
+      }
+    }
+  }
+
   for (let stage = 0; stage < vertexCount; stage++) {
     labels.fill(0);
     bestEdge.fill(-1);
@@ -801,24 +834,7 @@ function maxWeightMatching(
       const { deltaType, delta, deltaEdge, deltaBlossom } = computeDelta();
       if (deltaType === -1) break;
 
-      for (let v = 0; v < vertexCount; v++) {
-        if (labels[vertexTopBlossom[v]!] === 1) dual[v]!.subtract(delta);
-        else if (labels[vertexTopBlossom[v]!] === 2) dual[v]!.add(delta);
-      }
-      for (
-        let blossomIndex = vertexCount;
-        blossomIndex < 2 * vertexCount;
-        blossomIndex++
-      ) {
-        if (
-          blossomBase[blossomIndex]! >= 0 &&
-          blossomParent[blossomIndex] === -1
-        ) {
-          if (labels[blossomIndex] === 1) dual[blossomIndex]!.add(delta);
-          else if (labels[blossomIndex] === 2)
-            dual[blossomIndex]!.subtract(delta);
-        }
-      }
+      applyDualUpdate(delta);
 
       switch (deltaType) {
         case 1: {
