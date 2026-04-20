@@ -251,9 +251,12 @@ describe('dutch fixture: issue_7', () => {
 
   it('produces no rematches in round 15', () => {
     const result = pair(players, gamesBefore);
-    const flat = gamesBefore.flat();
+    // Forfeit games are not considered prior opponents per FIDE/bbpPairings
+    const played = gamesBefore
+      .flat()
+      .filter((g) => g.kind !== 'forfeit-win' && g.kind !== 'forfeit-loss');
     for (const pairing of result.pairings) {
-      const alreadyFaced = flat.some(
+      const alreadyFaced = played.some(
         (g) =>
           (g.white === pairing.white && g.black === pairing.black) ||
           (g.white === pairing.black && g.black === pairing.white),
@@ -396,9 +399,12 @@ describe('dutch fixture: issue_15', () => {
       (p) => !excluded.has(p.id),
     );
     const result = pair(players, gamesBefore);
-    const flat = gamesBefore.flat();
+    // Forfeit games are not considered prior opponents per FIDE/bbpPairings
+    const played = gamesBefore
+      .flat()
+      .filter((g) => g.kind !== 'forfeit-win' && g.kind !== 'forfeit-loss');
     for (const pairing of result.pairings) {
-      const alreadyFaced = flat.some(
+      const alreadyFaced = played.some(
         (g) =>
           (g.white === pairing.white && g.black === pairing.black) ||
           (g.white === pairing.black && g.black === pairing.white),

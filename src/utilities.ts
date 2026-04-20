@@ -108,7 +108,12 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
       colorHistory.push(isForfeit ? undefined : isWhite ? 'white' : 'black');
 
       score += isWhite ? game.result : 1 - game.result;
-      opponents.add(isWhite ? game.black : game.white);
+
+      // Forfeit — game was not actually played, opponent not recorded
+      // (matches bbpPairings: forbiddenPairs only added when gameWasPlayed)
+      if (!isForfeit) {
+        opponents.add(isWhite ? game.black : game.white);
+      }
 
       // Float status
       // Forfeit: bbpPairings treats unplayed games specially —

@@ -134,6 +134,21 @@ describe('buildPlayerStates', () => {
       const states = buildPlayerStates([{ id: 'A' }], byeGames);
       expect(states[0]?.opponents.size).toBe(0);
     });
+
+    it('does not include forfeit opponent', () => {
+      const games: Game[][] = [
+        [{ black: 'B', kind: 'forfeit-win', result: 1, white: 'A' }],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        games,
+      );
+      expect(states.find((s) => s.id === 'A')?.opponents.size).toBe(0);
+      expect(states.find((s) => s.id === 'B')?.opponents.size).toBe(0);
+    });
   });
 
   describe('colorHistory', () => {
