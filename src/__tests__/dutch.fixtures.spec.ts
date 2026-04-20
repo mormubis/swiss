@@ -19,7 +19,7 @@ import issue15 from './fixtures/issue_15.trf?raw';
 import issue7 from './fixtures/issue_7.trf?raw';
 
 import type { TraceEvent } from '../trace.js';
-import type { Game, Player } from '../types.js';
+import type { Game, GameKind, Player } from '../types.js';
 import type { Tournament } from '@echecs/trf';
 
 // ---------------------------------------------------------------------------
@@ -49,9 +49,34 @@ function toSwissGames(tournament: Tournament): Game[][] {
 
   for (const player of tournament.players) {
     for (const result of player.results) {
-      if (result.color !== 'w' || result.opponentId === null) {
+      const roundIndex = result.round - 1;
+      const roundGames = roundArrays[roundIndex];
+      if (roundGames === undefined) continue;
+
+      // Bye results (no opponent)
+      if (result.opponentId === null) {
+        const byeMap: Record<string, { kind: GameKind; result: 0 | 0.5 | 1 }> =
+          {
+            F: { kind: 'full-bye', result: 1 },
+            H: { kind: 'half-bye', result: 0.5 },
+            U: { kind: 'pairing-bye', result: 1 },
+            Z: { kind: 'zero-bye', result: 0 },
+          };
+        const bye = byeMap[result.result];
+        if (bye) {
+          roundGames.push({
+            black: '',
+            kind: bye.kind,
+            result: bye.result,
+            white: String(player.pairingNumber),
+          });
+        }
         continue;
       }
+
+      // Regular games — only record from white's perspective
+      if (result.color !== 'w') continue;
+
       let score: 0 | 0.5 | 1;
       switch (result.result) {
         case '1':
@@ -72,23 +97,20 @@ function toSwissGames(tournament: Tournament): Game[][] {
           continue;
         }
       }
-      const roundIndex = result.round - 1;
-      const roundGames = roundArrays[roundIndex];
-      if (roundGames !== undefined) {
-        const game: Game = {
-          black: String(result.opponentId),
-          result: score,
-          white: String(player.pairingNumber),
-        };
 
-        if (result.result === '+') {
-          game.kind = 'forfeit-win';
-        } else if (result.result === '-') {
-          game.kind = 'forfeit-loss';
-        }
+      const game: Game = {
+        black: String(result.opponentId),
+        result: score,
+        white: String(player.pairingNumber),
+      };
 
-        roundGames.push(game);
+      if (result.result === '+') {
+        game.kind = 'forfeit-win';
+      } else if (result.result === '-') {
+        game.kind = 'forfeit-loss';
       }
+
+      roundGames.push(game);
     }
   }
 

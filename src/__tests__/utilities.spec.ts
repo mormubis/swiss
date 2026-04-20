@@ -97,8 +97,26 @@ describe('buildPlayerStates', () => {
       expect(states[0]?.score).toBe(0);
     });
 
-    it('skips byes when computing score', () => {
-      const byeGames: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
+    it('counts pairing-bye score (1 point)', () => {
+      const byeGames: Game[][] = [
+        [{ black: '', kind: 'pairing-bye', result: 1, white: 'A' }],
+      ];
+      const states = buildPlayerStates([{ id: 'A' }], byeGames);
+      expect(states[0]?.score).toBe(1);
+    });
+
+    it('counts half-bye score (0.5 points)', () => {
+      const byeGames: Game[][] = [
+        [{ black: '', kind: 'half-bye', result: 0.5, white: 'A' }],
+      ];
+      const states = buildPlayerStates([{ id: 'A' }], byeGames);
+      expect(states[0]?.score).toBe(0.5);
+    });
+
+    it('counts zero-bye score (0 points)', () => {
+      const byeGames: Game[][] = [
+        [{ black: '', kind: 'zero-bye', result: 0, white: 'A' }],
+      ];
       const states = buildPlayerStates([{ id: 'A' }], byeGames);
       expect(states[0]?.score).toBe(0);
     });

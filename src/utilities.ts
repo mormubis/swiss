@@ -49,8 +49,14 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
   for (const round of games) {
     cumulativeScore.push(new Map(runningScoreMap));
     for (const game of round) {
-      // Skip byes (black === '')
-      if (game.black === '') continue;
+      if (game.black === '') {
+        // Bye: only white receives points
+        runningScoreMap.set(
+          game.white,
+          (runningScoreMap.get(game.white) ?? 0) + game.result,
+        );
+        continue;
+      }
       runningScoreMap.set(
         game.white,
         (runningScoreMap.get(game.white) ?? 0) + game.result,
@@ -86,6 +92,7 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
       // Bye sentinel: black === ''
       if (game.black === '') {
         byeCount++;
+        score += game.result;
         colorHistory.push(undefined);
         floatHistory.push('down');
         continue;
