@@ -75,11 +75,19 @@ function toSwissGames(tournament: Tournament): Game[][] {
       const roundIndex = result.round - 1;
       const roundGames = roundArrays[roundIndex];
       if (roundGames !== undefined) {
-        roundGames.push({
+        const game: Game = {
           black: String(result.opponentId),
           result: score,
           white: String(player.pairingNumber),
-        });
+        };
+
+        if (result.result === '+') {
+          game.kind = 'forfeit-win';
+        } else if (result.result === '-') {
+          game.kind = 'forfeit-loss';
+        }
+
+        roundGames.push(game);
       }
     }
   }

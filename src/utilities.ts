@@ -93,22 +93,37 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
 
       // Real game
       const isWhite = game.white === id;
-      colorHistory.push(isWhite ? 'white' : 'black');
+
+      // Forfeit — game was not actually played, no color recorded
+      // (matches bbpPairings: gameWasPlayed = false for +/- results)
+      const isForfeit =
+        game.kind === 'forfeit-win' || game.kind === 'forfeit-loss';
+      colorHistory.push(isForfeit ? undefined : isWhite ? 'white' : 'black');
+
       score += isWhite ? game.result : 1 - game.result;
       opponents.add(isWhite ? game.black : game.white);
 
-      // Float status: compare scores before this round
-      const opponentId = isWhite ? game.black : game.white;
-      const scoresBeforeRound = cumulativeScore[roundIndex];
-      const playerScoreBefore = scoresBeforeRound?.get(id) ?? 0;
-      const opponentScoreBefore = scoresBeforeRound?.get(opponentId) ?? 0;
-
-      if (playerScoreBefore > opponentScoreBefore) {
-        floatHistory.push('down');
-      } else if (playerScoreBefore < opponentScoreBefore) {
-        floatHistory.push('up');
+      // Float status
+      // Forfeit: bbpPairings treats unplayed games specially —
+      // forfeit win (points > loss) = FLOAT_DOWN, otherwise FLOAT_NONE.
+      if (isForfeit) {
+        const wonForfeit =
+          (isWhite && game.kind === 'forfeit-win') ||
+          (!isWhite && game.kind === 'forfeit-loss');
+        floatHistory.push(wonForfeit ? 'down' : undefined);
       } else {
-        floatHistory.push(undefined);
+        const opponentId = isWhite ? game.black : game.white;
+        const scoresBeforeRound = cumulativeScore[roundIndex];
+        const playerScoreBefore = scoresBeforeRound?.get(id) ?? 0;
+        const opponentScoreBefore = scoresBeforeRound?.get(opponentId) ?? 0;
+
+        if (playerScoreBefore > opponentScoreBefore) {
+          floatHistory.push('down');
+        } else if (playerScoreBefore < opponentScoreBefore) {
+          floatHistory.push('up');
+        } else {
+          floatHistory.push(undefined);
+        }
       }
     }
 

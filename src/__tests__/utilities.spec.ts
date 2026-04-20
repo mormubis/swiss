@@ -153,6 +153,54 @@ describe('buildPlayerStates', () => {
       const a = states.find((s) => s.id === 'A');
       expect(a?.colorHistory).toEqual([undefined]);
     });
+
+    it('returns undefined for forfeit-win rounds', () => {
+      const forfeitGames: Game[][] = [
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-win',
+            result: 1,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        forfeitGames,
+      );
+      const a = states.find((s) => s.id === 'A');
+      expect(a?.colorHistory).toEqual([undefined]);
+      const b = states.find((s) => s.id === 'B');
+      expect(b?.colorHistory).toEqual([undefined]);
+    });
+
+    it('returns undefined for forfeit-loss rounds', () => {
+      const forfeitGames: Game[][] = [
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-loss',
+            result: 0,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        forfeitGames,
+      );
+      const a = states.find((s) => s.id === 'A');
+      expect(a?.colorHistory).toEqual([undefined]);
+      const b = states.find((s) => s.id === 'B');
+      expect(b?.colorHistory).toEqual([undefined]);
+    });
   });
 
   describe('colorDiff', () => {
@@ -231,6 +279,20 @@ describe('buildPlayerStates', () => {
       // colorDiff = 1-0 = 1, |colorDiff|===1 → strong
       expect(a?.preferenceStrength).toBe('strong');
     });
+
+    it('returns "none" when only game was a forfeit', () => {
+      const games: Game[][] = [
+        [{ black: 'B', kind: 'forfeit-win', result: 1, white: 'A' }],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        games,
+      );
+      expect(states.find((s) => s.id === 'A')?.preferenceStrength).toBe('none');
+    });
   });
 
   describe('preferredColor', () => {
@@ -256,6 +318,20 @@ describe('buildPlayerStates', () => {
       const states = buildPlayerStates(PLAYERS, GAMES);
       const a = states.find((s) => s.id === 'A');
       expect(a?.preferredColor).toBe('white');
+    });
+
+    it('returns undefined when only game was a forfeit', () => {
+      const games: Game[][] = [
+        [{ black: 'B', kind: 'forfeit-win', result: 1, white: 'A' }],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        games,
+      );
+      expect(states.find((s) => s.id === 'A')?.preferredColor).toBeUndefined();
     });
   });
 
@@ -367,6 +443,126 @@ describe('buildPlayerStates', () => {
       );
       const a = states.find((s) => s.id === 'A');
       expect(a?.floatHistory[0]).toBe('down');
+    });
+
+    it('returns "down" for forfeit-win rounds', () => {
+      // Player A (score 0) beats B (score 1) by forfeit.
+      // bbpPairings: gameWasPlayed=false, points > pointsForLoss → FLOAT_DOWN.
+      // Without the fix, score comparison would say A floated UP (0 < 1).
+      const r1Games: Game[][] = [
+        [
+          { black: 'B', result: 0, white: 'A' }, // A loses R1 → A=0, B=1
+        ],
+      ];
+      const r2Games: Game[][] = [
+        ...r1Games,
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-win',
+            result: 1,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        r2Games,
+      );
+      const a = states.find((s) => s.id === 'A');
+      expect(a?.floatHistory[1]).toBe('down');
+    });
+
+    it('returns undefined for forfeit-loss rounds', () => {
+      // Player A (score 1) loses to B (score 0) by forfeit.
+      // bbpPairings: gameWasPlayed=false, points = pointsForLoss → FLOAT_NONE.
+      // Without the fix, score comparison would say A floated DOWN (1 > 0).
+      const r1Games: Game[][] = [
+        [
+          { black: 'B', result: 1, white: 'A' }, // A wins R1 → A=1, B=0
+        ],
+      ];
+      const r2Games: Game[][] = [
+        ...r1Games,
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-loss',
+            result: 0,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        r2Games,
+      );
+      const a = states.find((s) => s.id === 'A');
+      expect(a?.floatHistory[1]).toBeUndefined();
+    });
+
+    it('returns undefined for the loser in a forfeit-win game (black side)', () => {
+      const r1Games: Game[][] = [
+        [
+          { black: 'B', result: 0, white: 'A' }, // A loses R1 → A=0, B=1
+        ],
+      ];
+      const r2Games: Game[][] = [
+        ...r1Games,
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-win',
+            result: 1,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        r2Games,
+      );
+      const b = states.find((s) => s.id === 'B');
+      // B is the loser (black side of forfeit-win = white won)
+      expect(b?.floatHistory[1]).toBeUndefined();
+    });
+
+    it('returns "down" for the winner in a forfeit-loss game (black side)', () => {
+      const r1Games: Game[][] = [
+        [
+          { black: 'B', result: 1, white: 'A' }, // A wins R1 → A=1, B=0
+        ],
+      ];
+      const r2Games: Game[][] = [
+        ...r1Games,
+        [
+          {
+            black: 'B',
+            kind: 'forfeit-loss',
+            result: 0,
+            white: 'A',
+          },
+        ],
+      ];
+      const states = buildPlayerStates(
+        [
+          { id: 'A', rating: 2000 },
+          { id: 'B', rating: 1900 },
+        ],
+        r2Games,
+      );
+      const b = states.find((s) => s.id === 'B');
+      // B is the winner (black side of forfeit-loss = white lost)
+      expect(b?.floatHistory[1]).toBe('down');
     });
   });
 });
