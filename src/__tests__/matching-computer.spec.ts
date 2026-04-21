@@ -7,6 +7,7 @@ import {
   getAncestorOfVertex,
   setPointersFromAncestor,
 } from '../matching/blossom.js';
+import { Graph } from '../matching/graph.js';
 import { Vertex } from '../matching/vertex.js';
 
 describe('Vertex', () => {
@@ -308,5 +309,180 @@ describe('setPointersFromAncestor', () => {
 
     expect(pb.subblossom).toBe(v);
     expect(pb.iterationStartsWithSubblossom).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Graph
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a Graph with `n` vertices and maximum edge weight `maxWeight`.
+ */
+function makeTestGraph(n: number, maxWeight: number): Graph {
+  const graph = new Graph(DynamicUint.from(maxWeight));
+  for (let index = 0; index < n; index++) graph.addVertex();
+  return graph;
+}
+
+/**
+ * Set a bidirectional edge weight between two vertices.
+ * Internally edge weights are stored doubled; user-visible weight is halved.
+ * Uses prepareVertexForWeightAdjustments to reset dual variables correctly.
+ */
+function setEdgeWeight(
+  graph: Graph,
+  u: number,
+  v: number,
+  weight: number,
+): void {
+  // Weights are stored doubled internally.
+  const doubled = DynamicUint.from(weight * 2);
+  const vu = graph.vertices[u]!;
+  const vv = graph.vertices[v]!;
+  vu.edgeWeights[v] = doubled.clone();
+  vv.edgeWeights[u] = doubled.clone();
+}
+
+/**
+ * Initialize dual variables for all exposed vertices.
+ * In bbpPairings, prepareVertexForWeightAdjustments sets dual = aboveMaxEdgeWeight >> 1.
+ * Here we use the same approach — call it on each vertex before computeMatching.
+ */
+function initializeDuals(graph: Graph): void {
+  for (const rb of graph.rootBlossoms) {
+    rb.prepareVertexForWeightAdjustments(rb.baseVertex, graph);
+  }
+}
+
+/**
+ * Read the matching result after putVerticesInMatchingOrder.
+ * Returns an array where result[i] = j means vertex i is matched to vertex j,
+ * and result[i] = i means vertex i is unmatched (self-loop).
+ */
+function getMatching(graph: Graph): number[] {
+  const result = Array.from<number>({ length: graph.vertices.length }).fill(-1);
+
+  for (const rb of graph.rootBlossoms) {
+    rb.putVerticesInMatchingOrder();
+    const baseIndex = rb.baseVertex.vertexIndex;
+    result[baseIndex] = rb.baseVertexMatch
+      ? rb.baseVertexMatch.vertexIndex
+      : baseIndex; // exposed → self
+    // Walk the vertex list for the remaining matched pairs.
+    let v = rb.rootChild.vertexListHead.nextVertex;
+    while (v !== undefined) {
+      const partner = v.nextVertex;
+      if (partner === undefined) break;
+      result[v.vertexIndex] = partner.vertexIndex;
+      result[partner.vertexIndex] = v.vertexIndex;
+      v = partner.nextVertex;
+    }
+  }
+
+  return result;
+}
+
+describe('Graph', () => {
+  describe('addVertex', () => {
+    it('creates a vertex with the correct index', () => {
+      const graph = makeTestGraph(0, 100);
+      graph.addVertex();
+      expect(graph.vertices.length).toBe(1);
+      expect(graph.vertices[0]!.vertexIndex).toBe(0);
+    });
+
+    it('expands edgeWeights for all vertices', () => {
+      const graph = makeTestGraph(0, 100);
+      graph.addVertex();
+      graph.addVertex();
+      // Each vertex should have 2 edge weight slots (one per vertex).
+      expect(graph.vertices[0]!.edgeWeights.length).toBe(2);
+      expect(graph.vertices[1]!.edgeWeights.length).toBe(2);
+    });
+
+    it('creates a RootBlossom for each vertex', () => {
+      const graph = makeTestGraph(3, 100);
+      expect(graph.rootBlossoms.length).toBe(3);
+    });
+
+    it('new vertex has a singleton RootBlossom', () => {
+      const graph = makeTestGraph(0, 100);
+      graph.addVertex();
+      const v = graph.vertices[0]!;
+      expect(v.rootBlossom).toBeDefined();
+      expect(v.rootBlossom!.rootChild).toBe(v);
+      expect(v.rootBlossom!.baseVertex).toBe(v);
+    });
+
+    it('dual variables start at zero', () => {
+      const graph = makeTestGraph(2, 100);
+      expect(graph.vertexDualVariables[0]!.isZero()).toBe(true);
+      expect(graph.vertexDualVariables[1]!.isZero()).toBe(true);
+    });
+
+    it('dual variable is aliased by vertex.dualVariable', () => {
+      const graph = makeTestGraph(1, 100);
+      // They must be the same object.
+      expect(graph.vertices[0]!.dualVariable).toBe(
+        graph.vertexDualVariables[0],
+      );
+    });
+
+    it('aboveMaxEdgeWeight is strictly greater than 4x maxEdgeWeight', () => {
+      const graph = makeTestGraph(0, 10);
+      // aboveMaxEdgeWeight = 10 * 4 + 1 = 41
+      expect(graph.aboveMaxEdgeWeight.toBigInt()).toBe(41n);
+    });
+  });
+
+  describe('computeMatching — simple cases', () => {
+    it('two vertices, one edge — produces a matching', () => {
+      const graph = makeTestGraph(2, 10);
+      setEdgeWeight(graph, 0, 1, 10);
+      initializeDuals(graph);
+      graph.computeMatching();
+
+      const matching = getMatching(graph);
+      // Either vertex 0 matched to 1 and vice versa, or both self (no match found).
+      // With weight 10 between 0 and 1, they should be matched.
+      expect(matching[0]).toBe(1);
+      expect(matching[1]).toBe(0);
+    });
+
+    it('single vertex — no matching', () => {
+      const graph = makeTestGraph(1, 10);
+      initializeDuals(graph);
+      graph.computeMatching();
+      expect(graph.rootBlossoms[0]!.baseVertexMatch).toBeUndefined();
+    });
+
+    it('three vertices, one strong edge — matches the strongest pair', () => {
+      const graph = makeTestGraph(3, 10);
+      setEdgeWeight(graph, 0, 1, 10);
+      setEdgeWeight(graph, 1, 2, 5);
+      initializeDuals(graph);
+      graph.computeMatching();
+
+      const matching = getMatching(graph);
+      // Vertices 0 and 1 should be matched (weight 10 vs 5).
+      expect(matching[0]).toBe(1);
+      expect(matching[1]).toBe(0);
+    });
+  });
+
+  describe('constructor', () => {
+    it('aboveMaxEdgeWeight is set correctly', () => {
+      const graph = new Graph(DynamicUint.from(100));
+      // aboveMaxEdgeWeight = 100 * 4 + 1 = 401
+      expect(graph.aboveMaxEdgeWeight.toBigInt()).toBe(401n);
+    });
+
+    it('starts with empty vertices and blossoms', () => {
+      const graph = new Graph(DynamicUint.from(10));
+      expect(graph.vertices.length).toBe(0);
+      expect(graph.rootBlossoms.length).toBe(0);
+      expect(graph.parentBlossoms.length).toBe(0);
+    });
   });
 });
