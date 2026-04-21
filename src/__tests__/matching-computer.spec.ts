@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { maxWeightMatching } from '../blossom.js';
 import { DynamicUint } from '../dynamic-uint.js';
 import {
   ParentBlossom,
@@ -9,6 +10,7 @@ import {
 } from '../matching/blossom.js';
 import { Graph } from '../matching/graph.js';
 import { Vertex } from '../matching/vertex.js';
+import { MatchingComputer } from '../matching-computer.js';
 
 describe('Vertex', () => {
   const zero = DynamicUint.zero(1);
@@ -483,6 +485,177 @@ describe('Graph', () => {
       expect(graph.vertices.length).toBe(0);
       expect(graph.rootBlossoms.length).toBe(0);
       expect(graph.parentBlossoms.length).toBe(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MatchingComputer
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a matching result for comparison.
+ * maxWeightMatching uses -1 for unmatched; MatchingComputer uses i (self).
+ * This converts the self-loop convention to -1.
+ */
+function normalizeMatching(matching: number[]): number[] {
+  return matching.map((m, index) => (m === index ? -1 : m));
+}
+
+/**
+ * Compute total weight of a matching given edges.
+ * Each pair (i, j) is counted once.
+ */
+function totalWeight(
+  matching: number[],
+  edgeWeights: Map<string, number>,
+): number {
+  let total = 0;
+  const counted = new Set<number>();
+  for (const [index, element] of matching.entries()) {
+    const partner = element!;
+    if (partner !== -1 && partner !== index && !counted.has(index)) {
+      const key =
+        index < partner ? `${index}-${partner}` : `${partner}-${index}`;
+      total += edgeWeights.get(key) ?? 0;
+      counted.add(index);
+      counted.add(partner);
+    }
+  }
+  return total;
+}
+
+/**
+ * Build a MatchingComputer, set edges, compute, and return
+ * the matching normalized to -1 for unmatched.
+ */
+function computeViaMatchingComputer(
+  vertexCount: number,
+  edgeList: [number, number, number][],
+): number[] {
+  const maxW = Math.max(...edgeList.map(([u, v, w]) => Math.max(u, v, w)), 1);
+  const mc = new MatchingComputer(DynamicUint.from(maxW));
+  for (let index = 0; index < vertexCount; index++) mc.addVertex();
+  for (const [u, v, w] of edgeList) {
+    mc.setEdgeWeight(u, v, DynamicUint.from(w));
+  }
+  mc.computeMatching();
+  return normalizeMatching(mc.getMatching());
+}
+
+describe('MatchingComputer', () => {
+  describe('constructor and addVertex', () => {
+    it('starts with zero vertices', () => {
+      const mc = new MatchingComputer(DynamicUint.from(100));
+      expect(mc.size).toBe(0);
+    });
+
+    it('addVertex increments size', () => {
+      const mc = new MatchingComputer(DynamicUint.from(100));
+      mc.addVertex();
+      mc.addVertex();
+      expect(mc.size).toBe(2);
+    });
+  });
+
+  describe('integration: matches maxWeightMatching results', () => {
+    it('4 vertices, 2 disjoint edges — unique optimal', () => {
+      // Edge 0-1 weight 10, edge 2-3 weight 10. Optimal: both matched.
+      const edgeList: [number, number, number][] = [
+        [0, 1, 10],
+        [2, 3, 10],
+      ];
+      const reference = maxWeightMatching(
+        edgeList.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      const result = computeViaMatchingComputer(4, edgeList);
+      expect(result).toEqual(reference);
+    });
+
+    it('4 vertices, complete graph — single optimal pair wins', () => {
+      // Strongest edge is 0-3 (weight 20); optimal leaves 1-2 matched (weight 5)
+      // or 0-3 with 1 and 2 unmatched. maxWeightMatching picks 0-3 + 1-2.
+      const edgeList: [number, number, number][] = [
+        [0, 1, 5],
+        [0, 2, 5],
+        [0, 3, 20],
+        [1, 2, 5],
+        [1, 3, 5],
+        [2, 3, 5],
+      ];
+      const reference = maxWeightMatching(
+        edgeList.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      const result = computeViaMatchingComputer(4, edgeList);
+      expect(result).toEqual(reference);
+    });
+
+    it('6 vertices, path graph — unique perfect matching', () => {
+      // Path 0-1-2-3-4-5, all weight 10. Optimal: (0,1),(2,3),(4,5).
+      const edgeList: [number, number, number][] = [
+        [0, 1, 10],
+        [1, 2, 10],
+        [2, 3, 10],
+        [3, 4, 10],
+        [4, 5, 10],
+      ];
+      const reference = maxWeightMatching(
+        edgeList.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      const result = computeViaMatchingComputer(6, edgeList);
+      // Both should produce the same total weight even if vertex ordering differs.
+      const edgeWeightMap = new Map<string, number>();
+      for (const [u, v, w] of edgeList) {
+        const key = u < v ? `${u}-${v}` : `${v}-${u}`;
+        edgeWeightMap.set(key, w);
+      }
+      expect(totalWeight(result, edgeWeightMap)).toBe(
+        totalWeight(reference, edgeWeightMap),
+      );
+    });
+
+    it('8 vertices, assorted weights — total weight equals maxWeightMatching', () => {
+      const edgeList: [number, number, number][] = [
+        [0, 1, 30],
+        [0, 2, 15],
+        [1, 3, 20],
+        [2, 3, 25],
+        [4, 5, 35],
+        [4, 6, 10],
+        [5, 7, 15],
+        [6, 7, 40],
+        [3, 4, 5],
+      ];
+      const reference = maxWeightMatching(
+        edgeList.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      const result = computeViaMatchingComputer(8, edgeList);
+
+      const edgeWeightMap = new Map<string, number>();
+      for (const [u, v, w] of edgeList) {
+        const key = u < v ? `${u}-${v}` : `${v}-${u}`;
+        edgeWeightMap.set(key, w);
+      }
+      expect(totalWeight(result, edgeWeightMap)).toBe(
+        totalWeight(reference, edgeWeightMap),
+      );
+    });
+  });
+
+  describe('persistence test', () => {
+    it('preserves matching after unrelated setEdgeWeight', () => {
+      const mc = new MatchingComputer(DynamicUint.from(100));
+      for (let index = 0; index < 4; index++) mc.addVertex();
+      mc.setEdgeWeight(0, 1, DynamicUint.from(50));
+      mc.setEdgeWeight(2, 3, DynamicUint.from(50));
+      mc.computeMatching();
+      expect(mc.getMatching()).toEqual([1, 0, 3, 2]);
+
+      // Modify edge 0-2 (unrelated to existing pairs).
+      mc.setEdgeWeight(0, 2, DynamicUint.from(5));
+      mc.computeMatching();
+      // Original pairs should be preserved (not rearranged).
+      expect(mc.getMatching()).toEqual([1, 0, 3, 2]);
     });
   });
 });
