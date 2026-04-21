@@ -1,12 +1,13 @@
 import type { DynamicUint } from '../dynamic-uint.js';
+import type { Blossom, ParentBlossom, RootBlossom } from './blossom.js';
 
 /**
  * Per-vertex state for the persistent matching computer.
  *
  * Ported from bbpPairings `vertexsig.h` + `verteximpl.h`.
  *
- * Dual variable is NOT stored here — it lives in
- * `graph.vertexDualVariables[vertex.vertexIndex]`.
+ * Dual variable is aliased from `graph.vertexDualVariables[vertex.vertexIndex]`
+ * — both reference the same DynamicUint object.
  *
  * Edge weights are stored doubled internally to keep all values integral
  * when divided for dual-variable arithmetic.
@@ -19,6 +20,12 @@ class Vertex {
 
   /** Immutable index identifying this vertex within the graph. */
   readonly vertexIndex: number;
+
+  /**
+   * Dual variable for this vertex. Alias of `graph.vertexDualVariables[vertexIndex]`.
+   * Set when the vertex is added to the graph (Task 3).
+   */
+  dualVariable!: DynamicUint;
 
   /** Edge weights indexed by the other vertex's index (stored doubled). */
   edgeWeights: DynamicUint[];
@@ -44,8 +51,7 @@ class Vertex {
   // ---------------------------------------------------------------------------
 
   /** Next blossom child link. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  nextBlossom: any;
+  nextBlossom: Blossom | undefined;
 
   /** Next vertex in the linked list of vertices belonging to the same RootBlossom. */
   nextVertex: Vertex | undefined;
@@ -54,23 +60,17 @@ class Vertex {
   // Blossom tree membership
   // ---------------------------------------------------------------------------
 
-  /**
-   * The immediate parent blossom of this vertex within the blossom tree.
-   * Permissive type — tightened in Task 2 when Blossom classes are introduced.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  parentBlossom: any;
+  /** The immediate parent blossom of this vertex within the blossom tree. */
+  parentBlossom: ParentBlossom | undefined;
 
   /** Previous blossom child link. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  previousBlossom: any;
+  previousBlossom: Blossom | undefined;
 
   /**
    * The RootBlossom at the top of the blossom tree containing this vertex.
-   * Permissive type — tightened in Task 2 when Blossom classes are introduced.
+   * `undefined` until this vertex is placed under a RootBlossom.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rootBlossom: any;
+  rootBlossom: RootBlossom | undefined;
 
   // ---------------------------------------------------------------------------
   // Vertex linked list through enclosing RootBlossom
@@ -87,12 +87,10 @@ class Vertex {
   // ---------------------------------------------------------------------------
 
   /** Link to the next sibling blossom within the parent blossom. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vertexToNextSiblingBlossom: any;
+  vertexToNextSiblingBlossom: Vertex | undefined;
 
   /** Link to the previous sibling blossom within the parent blossom. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vertexToPreviousSiblingBlossom: any;
+  vertexToPreviousSiblingBlossom: Vertex | undefined;
 
   constructor(index: number, zero: DynamicUint) {
     this.vertexIndex = index;
