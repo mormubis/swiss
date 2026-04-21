@@ -226,8 +226,7 @@ class RootBlossom {
 
     this.freeAncestorOfBase(vertex, graph);
 
-    vertex.dualVariable = graph.aboveMaxEdgeWeight.clone();
-    vertex.dualVariable.shiftRight(1);
+    vertex.dualVariable.copyFrom(graph.aboveMaxEdgeWeight).shiftRight(1);
   }
 
   // ---------------------------------------------------------------------------
