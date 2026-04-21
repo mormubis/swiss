@@ -20,6 +20,7 @@
 
 import { maxWeightMatching } from './blossom.js';
 import { DynamicUint } from './dynamic-uint.js';
+import { MatchingComputer } from './matching-computer.js';
 import {
   allocateColor,
   assignBye,
@@ -509,86 +510,24 @@ function buildFeasibilityWeight(
 }
 
 // ---------------------------------------------------------------------------
-// Edge weight matrix — persistent across bracket iterations
+// finalizePairMC — set edge (v1,v2) to 1, zero all other edges for v1 and v2
 // ---------------------------------------------------------------------------
 
-/**
- * Maintains a 2D weight matrix (indexed by global sorted-player index).
- * weights[i][j] where i > j holds the weight for edge (i, j).
- * Can be mutated in place to simulate bbpPairings' matching_computer.
- */
-class EdgeWeightMatrix {
-  private readonly matrix: (DynamicUint | undefined)[][];
-  readonly size: number;
-
-  constructor(size: number) {
-    this.size = size;
-    this.matrix = Array.from({ length: size }, () => {
-      const row: (DynamicUint | undefined)[] = Array.from({ length: size });
-      return row;
-    });
-  }
-
-  /**
-   * Build an edge list for maxWeightMatching from the subset of vertices
-   * that are currently active (those in vertexIndices).
-   */
-  buildEdges(vertexIndices: number[]): [number, number, DynamicUint][] {
-    const edges: [number, number, DynamicUint][] = [];
-    for (let ii = 0; ii < vertexIndices.length; ii++) {
-      const vi = vertexIndices[ii];
-      if (vi === undefined) continue;
-      for (let jj = 0; jj < ii; jj++) {
-        const vj = vertexIndices[jj];
-        if (vj === undefined) continue;
-        const w = this.get(vi, vj);
-        if (!w.isZero()) {
-          edges.push([vi, vj, w]);
-        }
-      }
-    }
-    return edges;
-  }
-
-  get(index: number, index_: number): DynamicUint {
-    const hi = Math.max(index, index_);
-    const lo = Math.min(index, index_);
-    return (
-      (this.matrix[hi] as (DynamicUint | undefined)[])[lo] ??
-      DynamicUint.from(0)
-    );
-  }
-
-  set(index: number, index_: number, w: DynamicUint): void {
-    const hi = Math.max(index, index_);
-    const lo = Math.min(index, index_);
-    if (this.matrix[hi] !== undefined) {
-      (this.matrix[hi] as (DynamicUint | undefined)[])[lo] = w;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// finalizePair — set edge (v1,v2) to maxEdgeWeight, zero all others
-// ---------------------------------------------------------------------------
-
-function finalizePair(
+function finalizePairMC(
   v1: number,
   v2: number,
-  matrix: EdgeWeightMatrix,
-  maxEdgeWeight: DynamicUint,
-  allVertices: number[],
+  mc: MatchingComputer,
+  np: number,
 ): void {
-  // Set the pair edge to max
-  matrix.set(v1, v2, maxEdgeWeight.clone());
-
-  // Zero all other edges involving v1 or v2
-  for (const v of allVertices) {
-    if (v !== v1 && v !== v2) {
-      matrix.set(v1, v, DynamicUint.from(0));
-      matrix.set(v2, v, DynamicUint.from(0));
+  const one = DynamicUint.from(1);
+  const zero = DynamicUint.from(0);
+  for (let index = 0; index < np; index++) {
+    if (index !== v1 && index !== v2) {
+      mc.setEdgeWeight(v1, index, zero.clone());
+      mc.setEdgeWeight(v2, index, zero.clone());
     }
   }
+  mc.setEdgeWeight(v1, v2, one);
 }
 
 // ---------------------------------------------------------------------------
@@ -760,12 +699,13 @@ function pair(
   });
 
   // -------------------------------------------------------------------------
-  // Phase 4: Initialize edge weight matrix + maxEdgeWeight
+  // Phase 4: Initialize MatchingComputer + maxEdgeWeight
   // -------------------------------------------------------------------------
   const maxEdgeWeight = computeMaxEdgeWeight(sgp);
 
-  // Persistent edge weight matrix, populated per-bracket with correct weights.
-  const matrix = new EdgeWeightMatrix(np);
+  // Persistent matching computer, populated per-bracket with correct weights.
+  const mc = new MatchingComputer(maxEdgeWeight);
+  for (let index = 0; index < np; index++) mc.addVertex();
 
   // -------------------------------------------------------------------------
   // Phase 5: Bracket-by-bracket processing
@@ -887,7 +827,7 @@ function pair(
           isSingleDownfloaterByeAssignee,
           unplayedGameRanks,
         );
-        matrix.set(largerGlobal, smallerGlobal, w);
+        mc.setEdgeWeight(largerGlobal, smallerGlobal, w);
       }
     }
 
@@ -933,55 +873,40 @@ function pair(
           smallerLocalIndex
         ] = w;
 
-        // Update the persistent matrix
-        matrix.set(largerGlobal, smallerGlobal, w);
+        // Update the persistent matching computer
+        mc.setEdgeWeight(largerGlobal, smallerGlobal, w);
       }
     }
 
-    // Build edges for blossom from playersByIndex
-    const buildCurrentEdges = (): [number, number, DynamicUint][] => {
-      const edges: [number, number, DynamicUint][] = [];
-      for (let ii = 0; ii < playersByIndex.length; ii++) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const index = playersByIndex[ii]!;
-        for (let jj = 0; jj < ii; jj++) {
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          const index_ = playersByIndex[jj]!;
-          const w = matrix.get(index, index_);
-          if (!w.isZero()) {
-            edges.push([index, index_, w]);
+    // Helper: run matching computer on current playersByIndex
+    const runBlossom = (): number[] => {
+      if (trace) {
+        // Count non-zero edges for trace
+        let edgeCount = 0;
+        for (let ii = 0; ii < playersByIndex.length; ii++) {
+          for (let jj = 0; jj < ii; jj++) {
+            edgeCount++;
           }
         }
-      }
-      return edges;
-    };
-
-    // Helper: run blossom on current playersByIndex
-    const runBlossom = (): number[] => {
-      const edges = buildCurrentEdges();
-      if (edges.length === 0) return Array.from({ length: np }, () => -1);
-      if (trace) {
         trace({
-          edgeCount: edges.length,
+          edgeCount,
           phase: currentPhase,
           system: 'dutch',
           type: 'pairing:blossom-invoked',
           vertexCount: playersByIndex.length,
         });
       }
-      const result = maxWeightMatching(edges, true, trace);
-      // Expand to full np size
-      const full = Array.from({ length: np }, () => -1);
-      for (const [k, element] of result.entries()) {
-        if (element !== undefined && element !== -1) {
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          full[k] = element!;
-        }
+      mc.computeMatching();
+      const rawMatching = mc.getMatching();
+      // Normalize: self-match → -1
+      const stableM = [...rawMatching];
+      for (let index = 0; index < stableM.length; index++) {
+        if (stableM[index] === index) stableM[index] = -1;
       }
       if (trace) {
         const pairs: [string, string][] = [];
         let unmatchedCount = 0;
-        for (const [k, element] of full.entries()) {
+        for (const [k, element] of stableM.entries()) {
           const mk = element ?? -1;
           if (mk > k) {
             const aState = pairedSorted[k];
@@ -999,7 +924,7 @@ function pair(
           unmatchedCount,
         });
       }
-      return full;
+      return stableM;
     };
 
     // edgeWeightComputer — mimics bbpPairings' lambda
@@ -1128,7 +1053,7 @@ function pair(
             if (base !== undefined && !base.isZero()) {
               const boosted = base.clone();
               boosted.or(1); // set finalization bit
-              matrix.set(playerGlobal, opponentGlobal, boosted);
+              mc.setEdgeWeight(playerGlobal, opponentGlobal, boosted);
             }
           }
 
@@ -1161,7 +1086,7 @@ function pair(
               const boosted = base.clone();
               boosted.or(nextScoreGroupBegin - scoreGroupBegin);
               boosted.add(1);
-              matrix.set(playerGlobal, opponentGlobal, boosted);
+              mc.setEdgeWeight(playerGlobal, opponentGlobal, boosted);
             }
           }
         }
@@ -1196,7 +1121,7 @@ function pair(
         if (base !== undefined && !base.isZero()) {
           const boosted = base.clone();
           boosted.add(addend);
-          matrix.set(playerGlobal, opponentGlobal, boosted);
+          mc.setEdgeWeight(playerGlobal, opponentGlobal, boosted);
           addend++;
         }
       }
@@ -1208,13 +1133,7 @@ function pair(
       const matchGlobal = stableMatching[playerGlobal] ?? -1;
       if (matchGlobal >= 0 && matchGlobal !== playerGlobal) {
         matched[matchGlobal] = true;
-        finalizePair(
-          playerGlobal,
-          matchGlobal,
-          matrix,
-          maxEdgeWeight,
-          playersByIndex,
-        );
+        finalizePairMC(playerGlobal, matchGlobal, mc, np);
         matchedPairs.push([playerGlobal, matchGlobal]);
         if (trace) {
           trace({
@@ -1284,7 +1203,7 @@ function pair(
           playerRemainderIndex,
           remainderPairs,
         );
-        matrix.set(playerGlobal, opponentGlobal, ew);
+        mc.setEdgeWeight(playerGlobal, opponentGlobal, ew);
         playerRemainderIndex++;
       }
     }
@@ -1344,7 +1263,7 @@ function pair(
             );
             if (!ew.isZero()) {
               ew.subtract(1);
-              matrix.set(playerGlobal, opponentGlobal, ew);
+              mc.setEdgeWeight(playerGlobal, opponentGlobal, ew);
             }
           }
           currentPhase = 'bracket-exchange-s1';
@@ -1372,7 +1291,7 @@ function pair(
             playerRemainderIndex,
             remainderPairs,
           );
-          matrix.set(playerGlobal, opponentGlobal, ew);
+          mc.setEdgeWeight(playerGlobal, opponentGlobal, ew);
         }
       }
 
@@ -1407,7 +1326,7 @@ function pair(
             );
             if (!ew.isZero()) {
               ew.add(1);
-              matrix.set(playerGlobal, opponentGlobal, ew);
+              mc.setEdgeWeight(playerGlobal, opponentGlobal, ew);
             }
           }
           currentPhase = 'bracket-exchange-s2';
@@ -1428,7 +1347,7 @@ function pair(
             (baseEdgeWeights[playerLocal] as (DynamicUint | undefined)[])[
               opponentLocal
             ] = DynamicUint.from(0);
-            matrix.set(playerGlobal, opponentGlobal, DynamicUint.from(0));
+            mc.setEdgeWeight(playerGlobal, opponentGlobal, DynamicUint.from(0));
           }
           for (
             let opIndex = nextScoreGroupBegin;
@@ -1440,7 +1359,7 @@ function pair(
             (baseEdgeWeights[opIndex] as (DynamicUint | undefined)[])[
               playerLocal
             ] = DynamicUint.from(0);
-            matrix.set(playerGlobal, opponentGlobal, DynamicUint.from(0));
+            mc.setEdgeWeight(playerGlobal, opponentGlobal, DynamicUint.from(0));
           }
         }
 
@@ -1456,7 +1375,7 @@ function pair(
               remIndex,
               remainderPairs,
             );
-            matrix.set(playerGlobal, opponentGlobal, ew);
+            mc.setEdgeWeight(playerGlobal, opponentGlobal, ew);
           }
         }
         remIndex++;
@@ -1501,7 +1420,7 @@ function pair(
         const base = (
           baseEdgeWeights[opponentLocal] as (DynamicUint | undefined)[]
         )[playerLocal];
-        matrix.set(
+        mc.setEdgeWeight(
           playerGlobal,
           opponentGlobal,
           base === undefined ? DynamicUint.from(0) : base.clone(),
@@ -1546,7 +1465,7 @@ function pair(
         if (base !== undefined && !base.isZero()) {
           const boosted = base.clone();
           boosted.add(addend);
-          matrix.set(playerGlobal, opponentGlobal, boosted);
+          mc.setEdgeWeight(playerGlobal, opponentGlobal, boosted);
         }
         addend++;
       }
@@ -1562,13 +1481,7 @@ function pair(
       ) {
         matched[playerGlobal] = true;
         matched[matchGlobal] = true;
-        finalizePair(
-          playerGlobal,
-          matchGlobal,
-          matrix,
-          maxEdgeWeight,
-          playersByIndex,
-        );
+        finalizePairMC(playerGlobal, matchGlobal, mc, np);
         matchedPairs.push([playerGlobal, matchGlobal]);
         if (trace) {
           trace({
