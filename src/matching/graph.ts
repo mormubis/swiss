@@ -787,14 +787,8 @@ class Graph implements GraphLike {
           // Disconnect child from the old ParentBlossom.
           currentChild.parentBlossom = undefined;
 
-          // Update rootBlossom pointer for all vertices in this child.
-          for (
-            let v: Vertex | undefined = currentChild.vertexListHead;
-            v;
-            v = v.nextVertex
-          ) {
-            v.rootBlossom = newRb;
-          }
+          // Update rootBlossom pointer for all vertices and nested ParentBlossoms.
+          newRb.updateRootBlossomInDescendants();
 
           // Set up minOuterEdges array (size = number of vertices).
           while (newRb.minOuterEdges.length < this.vertices.length) {
@@ -1021,58 +1015,85 @@ class Graph implements GraphLike {
    * Creates a ParentBlossom that wraps all the existing child blossoms,
    * and a RootBlossom pointing to it.
    *
-   * This corresponds to the C++ RootBlossom path-iterator constructor.
+   * Ported from bbpPairings `rootblossom.cpp` path-iterator constructor.
    */
   private formBlossomFromPath(path: Vertex[]): void {
-    if (path.length === 0) return;
+    if (path.length < 2) return;
 
-    // The new blossom's root blossom is the same as the root of path[0].
-    // All vertices in the path belong to the same RootBlossom.
+    // All vertices in the path share the same RootBlossom (same-root case).
     const oldRb = path[0]!.rootBlossom!;
 
-    // Collect all vertices in the old blossom.
-    const allVertices: Vertex[] = [];
-    for (
-      let v: Vertex | undefined = oldRb.rootChild.vertexListHead;
-      v;
-      v = v.nextVertex
-    ) {
-      allVertices.push(v);
-    }
+    // The path alternates between child-blossom boundary vertices.
+    // path[0], path[1] = first pair: path[0] is inside child A (exit vertex),
+    //                                path[1] is inside child B (entry vertex).
+    // path[2], path[3] = next pair, etc.
+    //
+    // The first child (ancestor of path[0] under undefined) becomes previousChild.
+    // The last child is the ancestor of path[path.length-1] under undefined.
+    // vertex list: head from last child's head, tail from first child's tail
+    // (C++ parentblossomimpl.h:28-31).
 
-    // Create a new zero dual variable for the ParentBlossom.
+    const firstChild: Blossom = getAncestorOfVertex(path[0]!);
+    const lastChild: Blossom = getAncestorOfVertex(path.at(-1)!);
+
+    // Create the new zero dual variable.
     const newDual = this.aboveMaxEdgeWeight.clone().and(0);
 
-    // The new ParentBlossom wraps oldRb.rootChild as its subblossom.
-    // We need to link all children in a cycle (nextBlossom/previousBlossom).
-    // The C++ does this inside the RootBlossom path constructor. Here we
-    // do it by collecting the distinct "child blossoms" visited by the path
-    // and linking them.
-
-    // Collect the child blossoms of the new ParentBlossom.
-    // Each vertex in path has a rootBlossom child (its direct child of oldRb.rootChild).
-    // We collect unique child blossoms in path order.
-    // Since all vertices are in the same old root blossom, their "child of root" is
-    // the old rootChild (singleton if the old rootBlossom had no compound child).
-
-    // For now, since we're creating a blossom from a cycle, the child blossoms
-    // are the singleton vertices or existing compound blossoms.
-    // We use the old root child as the subblossom of the new ParentBlossom.
-
+    // Create the ParentBlossom.
+    // vertexListHead = last child's vertexListHead (C++ prepends in reverse)
+    // vertexListTail = first child's vertexListTail
     const newParent = new ParentBlossom(
       newDual,
-      oldRb, // rootBlossom (will be updated)
-      oldRb.rootChild, // subblossom
-      allVertices[0]!,
-      allVertices.at(-1)!,
+      oldRb,
+      firstChild,
+      lastChild.vertexListHead,
+      firstChild.vertexListTail,
     );
-    newParent.vertexListHead = allVertices[0]!;
-    newParent.vertexListTail = allVertices.at(-1)!;
+
+    // connectChildren sets up the sibling linked list starting from firstChild.
+    // After this call, newParent.subblossom points to the last child.
+    // All children except the first get parentBlossom = newParent.
+    newParent.connectChildren(path);
+
+    // The first child also needs parentBlossom = newParent.
+    firstChild.parentBlossom = newParent;
+
+    // Close the circular linked list: lastChild.nextBlossom → firstChild.
+    // freeAncestorOfBase iterates the circular list and relies on this.
+    const lastChild2 = newParent.subblossom; // subblossom = last child after connectChildren
+    lastChild2.nextBlossom = firstChild;
+    firstChild.previousBlossom = lastChild2;
+
+    // Link vertex lists of children together in reverse path order.
+    // C++ rootblossom.cpp:166-174 links them so the final list is:
+    //   lastChild → ... → firstChild
+    // matching parentblossomimpl.h:28-31 which sets:
+    //   vertexListHead = lastChild.vertexListHead
+    //   vertexListTail = firstChild.vertexListTail
+    //
+    // Collect children in forward order (firstChild → ... → lastChild),
+    // counting exactly childCount = path.length/2 + 1 children.
+    {
+      const childCount = Math.floor(path.length / 2) + 1;
+      const children: Blossom[] = [];
+      let current: Blossom = firstChild;
+      for (let index = 0; index < childCount; index++) {
+        children.push(current);
+        current = current.nextBlossom!; // safe: cycle is closed
+      }
+
+      // Link in reverse: lastChild.tail → secondToLast.head → ... → firstChild.head.
+      for (let index = children.length - 1; index > 0; index--) {
+        children[index]!.vertexListTail.nextVertex =
+          children[index - 1]!.vertexListHead;
+      }
+      // Terminate the list at firstChild's tail.
+      firstChild.vertexListTail.nextVertex = undefined;
+    }
 
     this.parentBlossoms.push(newParent);
 
-    // Create the new RootBlossom.
-    // The new blossom is OUTER (since both endpoints were OUTER).
+    // Create the new RootBlossom wrapping newParent.
     const newRb = new RootBlossom(
       newParent,
       oldRb.baseVertex,
@@ -1088,10 +1109,11 @@ class Graph implements GraphLike {
       newRb.minOuterEdges.push(undefined);
     }
 
-    // Update all vertices' rootBlossom pointer.
-    for (const v of allVertices) {
-      v.rootBlossom = newRb;
-    }
+    // Set newParent's parentBlossom to undefined (directly under RootBlossom).
+    newParent.parentBlossom = undefined;
+
+    // Update rootBlossom pointers for all descendants.
+    newRb.updateRootBlossomInDescendants();
 
     // Remove old RootBlossom from the list.
     const oldRbIndex = this.rootBlossoms.indexOf(oldRb);

@@ -89,6 +89,36 @@ class ParentBlossom {
     this.vertexToNextSiblingBlossom = undefined;
     this.vertexToPreviousSiblingBlossom = undefined;
   }
+
+  // ---------------------------------------------------------------------------
+  // connectChildren (parentblossom.cpp:17-40)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Initialize sibling links, parent links, and child links from a path.
+   *
+   * The path alternates vertex pairs: path[0], path[1], path[2], path[3], …
+   * At each even index i, path[i] is the vertex inside the current child that
+   * links to the next sibling; path[i+1] is the vertex inside the next child
+   * that links back to the current sibling.
+   *
+   * After the call `this.subblossom` points to the last child in the chain.
+   *
+   * Ported from bbpPairings `parentblossom.cpp:17-40`.
+   */
+  connectChildren(path: Vertex[]): void {
+    let previousChild: Blossom = getAncestorOfVertex(path[0]!);
+    for (let index = 0; index < path.length; index += 2) {
+      previousChild.vertexToNextSiblingBlossom = path[index]!;
+      const nextVertex = path[index + 1]!;
+      this.subblossom = getAncestorOfVertex(nextVertex);
+      previousChild.nextBlossom = this.subblossom;
+      this.subblossom.vertexToPreviousSiblingBlossom = nextVertex;
+      this.subblossom.parentBlossom = this;
+      this.subblossom.previousBlossom = previousChild;
+      previousChild = this.subblossom;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +320,31 @@ class RootBlossom {
   }
 
   // ---------------------------------------------------------------------------
+  // updateRootBlossomInDescendants (rootblossomimpl.h:176-195)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Update the rootBlossom pointer on all descendant vertices and
+   * ParentBlossoms to point to this RootBlossom.
+   *
+   * Ported from bbpPairings `rootblossomimpl.h:176-195`.
+   */
+  updateRootBlossomInDescendants(): void {
+    for (
+      let v: Vertex | undefined = this.rootChild.vertexListHead;
+      v;
+      v = v.nextVertex
+    ) {
+      v.rootBlossom = this;
+      let pb: ParentBlossom | undefined = v.parentBlossom;
+      while (pb && pb.vertexListTail === v) {
+        pb.rootBlossom = this;
+        pb = pb.parentBlossom;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // freeAncestorOfBase (rootblossom.cpp:184-274)
   // ---------------------------------------------------------------------------
 
@@ -324,6 +379,7 @@ class RootBlossom {
       graph,
     );
     graph.rootBlossoms.push(ancestorRoot);
+    ancestorRoot.updateRootBlossomInDescendants();
 
     for (
       let iterator: Vertex | undefined = ancestor.vertexListHead;
@@ -361,6 +417,7 @@ class RootBlossom {
           graph,
         );
         graph.rootBlossoms.push(siblingRoot);
+        siblingRoot.updateRootBlossomInDescendants();
 
         for (
           let iterator: Vertex | undefined = currentBlossom!.vertexListHead;
