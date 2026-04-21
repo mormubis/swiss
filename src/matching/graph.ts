@@ -12,6 +12,7 @@
 import {
   ParentBlossom,
   RootBlossom,
+  getAncestorOfVertex,
   setPointersFromAncestor,
 } from './blossom.js';
 import { Label } from './types.js';
@@ -201,107 +202,28 @@ class Graph implements GraphLike {
     }
   }
 
-  // Private methods (alphabetical)
-
-  // ---------------------------------------------------------------------------
-  // addVertex helper: initialize inner-outer edges
-  // ---------------------------------------------------------------------------
-
-  private applyDualAdjustment(
-    delta: DynamicUint,
-    minOuterDual: DynamicUint,
-    minInnerDual: DynamicUint,
-    minOuterOuterResistance: DynamicUint,
-    minInnerOuterResistance: DynamicUint,
-  ): void {
-    // Apply delta to all vertices and blossoms.
-    for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER) {
-        // OUTER: vertex duals decrease by delta.
-        for (
-          let v: Vertex | undefined = rb.rootChild.vertexListHead;
-          v;
-          v = v.nextVertex
-        ) {
-          v.dualVariable.subtract(delta);
-        }
-        // OUTER blossom's rootChild ParentBlossom dual increases by 2*delta.
-        if (!rb.rootChild.isVertex) {
-          (rb.rootChild as ParentBlossom).dualVariable.add(delta).add(delta);
-        }
-        // Outer-outer resistances decrease by 2*delta.
-        rb.minOuterEdgeResistance.subtract(delta).subtract(delta);
-      } else if (rb.label === Label.INNER) {
-        // INNER: vertex duals increase by delta.
-        for (
-          let v: Vertex | undefined = rb.rootChild.vertexListHead;
-          v;
-          v = v.nextVertex
-        ) {
-          v.dualVariable.add(delta);
-        }
-        // INNER blossom's rootChild ParentBlossom dual decreases by 2*delta.
-        if (!rb.rootChild.isVertex) {
-          (rb.rootChild as ParentBlossom).dualVariable
-            .subtract(delta)
-            .subtract(delta);
-        }
-      } else {
-        // FREE / ZERO: inner-outer resistances decrease by delta.
-        for (
-          let v: Vertex | undefined = rb.rootChild.vertexListHead;
-          v;
-          v = v.nextVertex
-        ) {
-          if (v.minOuterEdge !== undefined) {
-            v.minOuterEdgeResistance.subtract(delta);
-          }
-        }
-      }
-    }
-
-    // Update the tracking variables.
-    minOuterDual.subtract(delta);
-    minInnerDual.subtract(delta).subtract(delta); // inner dual changes by 2*delta
-    minOuterOuterResistance.subtract(delta).subtract(delta);
-    minInnerOuterResistance.subtract(delta);
-  }
-
   // ---------------------------------------------------------------------------
   // augmentMatching — graph.cpp:395-785
+  // Complete rewrite to faithfully port the C++ algorithm.
   // ---------------------------------------------------------------------------
 
   private augmentMatching(): boolean {
-    if (this.rootBlossoms.length === 0) return false;
-
     // -------------------------------------------------------------------------
-    // INITIALIZATION
+    // INITIALIZATION (initializeLabeling)
     // -------------------------------------------------------------------------
 
-    // Assign initial labels.
-    const minOuterDual = this.aboveMaxEdgeWeight.clone();
-    const minInnerDual = this.aboveMaxEdgeWeight.clone();
+    // minOuterDualVariable tracks the minimum dual among OUTER vertices,
+    // plus the vertex that achieves it.
+    const minOuterDualVariable = this.aboveMaxEdgeWeight.clone();
+    let minOuterDualVariableVertex: Vertex | undefined;
 
     for (const rb of this.rootBlossoms) {
+      // Reset labeling state.
       rb.labeledVertex = undefined;
       rb.labelingVertex = undefined;
       rb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
       for (let index = 0; index < rb.minOuterEdges.length; index++) {
         rb.minOuterEdges[index] = undefined;
-      }
-
-      if (rb.baseVertexMatch) {
-        rb.label = Label.FREE;
-      } else {
-        // Exposed vertex.
-        if (rb.baseVertex.dualVariable.isZero()) {
-          rb.label = Label.ZERO;
-        } else {
-          rb.label = Label.OUTER;
-          if (rb.baseVertex.dualVariable.lt(minOuterDual)) {
-            minOuterDual.copyFrom(rb.baseVertex.dualVariable);
-          }
-        }
       }
 
       // Reset vertex minOuterEdge tracking.
@@ -313,422 +235,643 @@ class Graph implements GraphLike {
         v.minOuterEdge = undefined;
         v.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
       }
-    }
 
-    // Initialize inner-outer edges: for each non-OUTER blossom vertex, find
-    // cheapest edge to any OUTER vertex.
-    this.initializeInnerOuterEdges();
-
-    // Initialize outer-outer edges: for each pair of OUTER blossoms, find
-    // cheapest edge between them.
-    this.initializeOuterOuterEdges();
-
-    // Track minimum outer edge resistance across all RootBlossoms.
-    const minOuterOuterResistance = this.aboveMaxEdgeWeight.clone();
-    const minInnerOuterResistance = this.aboveMaxEdgeWeight.clone();
-
-    for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER) {
-        if (rb.minOuterEdgeResistance.lt(minOuterOuterResistance)) {
-          minOuterOuterResistance.copyFrom(rb.minOuterEdgeResistance);
-        }
+      if (rb.baseVertexMatch) {
+        rb.label = Label.FREE;
       } else {
-        // FREE / ZERO: check inner-outer resistance
-        for (
-          let v: Vertex | undefined = rb.rootChild.vertexListHead;
-          v;
-          v = v.nextVertex
-        ) {
-          if (
-            v.minOuterEdge !== undefined &&
-            v.minOuterEdgeResistance.lt(minInnerOuterResistance)
-          ) {
-            minInnerOuterResistance.copyFrom(v.minOuterEdgeResistance);
+        // Exposed vertex.
+        if (rb.baseVertex.dualVariable.isZero()) {
+          rb.label = Label.ZERO;
+        } else {
+          rb.label = Label.OUTER;
+          // Track min outer dual variable vertex.
+          if (rb.baseVertex.dualVariable.lt(minOuterDualVariable)) {
+            minOuterDualVariable.copyFrom(rb.baseVertex.dualVariable);
+            minOuterDualVariableVertex = rb.baseVertex;
           }
         }
       }
     }
 
-    // Also update minInnerDual from ParentBlossoms with INNER label.
+    // If no OUTER vertices, no augmentation possible.
+    if (!minOuterDualVariableVertex) {
+      return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Initialize inner-outer edges: for each non-OUTER blossom vertex, find
+    // cheapest edge to any OUTER vertex.
+    // (initializeInnerOuterEdges)
+    // -------------------------------------------------------------------------
+    this.initializeInnerOuterEdges();
+
+    // -------------------------------------------------------------------------
+    // Initialize outer-outer edges: for each OUTER blossom, find cheapest
+    // edges to all other OUTER blossoms.
+    // (initializeOuterOuterEdges)
+    // -------------------------------------------------------------------------
+    this.initializeOuterOuterEdges();
+
+    // -------------------------------------------------------------------------
+    // Initialize minOuterOuterEdgeResistance tracking
+    // (initializeMinOuterOuterEdgeResistance)
+    // -------------------------------------------------------------------------
+    const minOuterOuterEdgeResistance = this.aboveMaxEdgeWeight.clone();
+    let minOuterOuterEdgeResistanceRootBlossom: RootBlossom | undefined;
     for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.INNER && !rb.rootChild.isVertex) {
-        const pb = rb.rootChild as ParentBlossom;
-        if (pb.dualVariable.lt(minInnerDual)) {
-          minInnerDual.copyFrom(pb.dualVariable);
-        }
+      if (
+        rb.label === Label.OUTER &&
+        rb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)
+      ) {
+        minOuterOuterEdgeResistance.copyFrom(rb.minOuterEdgeResistance);
+        minOuterOuterEdgeResistanceRootBlossom = rb;
       }
     }
+
+    // -------------------------------------------------------------------------
+    // Initialize minInnerDualVariable tracking
+    // -------------------------------------------------------------------------
+    const minInnerDualVariable = this.aboveMaxEdgeWeight.clone();
+    let minInnerDualVariableBlossom: ParentBlossom | undefined;
+    this.initializeMinInnerDualVariable(
+      (blossom) => {
+        minInnerDualVariableBlossom = blossom;
+      },
+      (value) => {
+        minInnerDualVariable.copyFrom(value);
+      },
+    );
 
     // -------------------------------------------------------------------------
     // MAIN LOOP
     // -------------------------------------------------------------------------
 
     for (;;) {
-      // Check if there are any OUTER vertices at all.
-      const hasOuter = this.rootBlossoms.some((rb) => rb.label === Label.OUTER);
-      if (!hasOuter) return false;
+      // Compute minInnerOuterEdgeResistance FRESH each iteration (C++ does
+      // this at top of loop every iteration).
+      const minInnerOuterEdgeResistance = this.aboveMaxEdgeWeight.clone();
+      let minInnerOuterEdgeResistanceVertex: Vertex | undefined;
+      for (const vertex of this.vertices) {
+        if (
+          (vertex.rootBlossom!.label === Label.FREE ||
+            vertex.rootBlossom!.label === Label.ZERO) &&
+          vertex.minOuterEdgeResistance.lt(minInnerOuterEdgeResistance)
+        ) {
+          minInnerOuterEdgeResistance.copyFrom(vertex.minOuterEdgeResistance);
+          minInnerOuterEdgeResistanceVertex = vertex;
+        }
+      }
 
-      // Compute the dual adjustment delta.
-      // delta = min(
-      //   minOuterDual,                    // OUTER dual → 0
-      //   minInnerOuterResistance,         // FREE/ZERO↔OUTER edge tight
-      //   floor(minOuterOuterResistance/2),// OUTER↔OUTER edge tight
-      //   floor(minInnerDual/2)            // INNER blossom dual → 0
+      // Compute dual adjustment:
+      // dualAdjustment = min(
+      //   minOuterDualVariable,
+      //   minInnerOuterEdgeResistance,
+      //   minOuterOuterEdgeResistance >> 1,
+      //   minInnerDualVariable >> 1
       // )
+      const halfOuterOuter = minOuterOuterEdgeResistance.clone().shiftRight(1);
+      const halfInnerDual = minInnerDualVariable.clone().shiftRight(1);
 
-      const halfOuterOuter = minOuterOuterResistance.clone().shiftRight(1);
-      const halfInnerDual = minInnerDual.clone().shiftRight(1);
-
-      const delta = minOuterDual.clone();
-      if (minInnerOuterResistance.lt(delta))
-        delta.copyFrom(minInnerOuterResistance);
-      if (halfOuterOuter.lt(delta)) delta.copyFrom(halfOuterOuter);
-      if (halfInnerDual.lt(delta)) delta.copyFrom(halfInnerDual);
-
-      if (delta.isZero() && minOuterDual.isZero()) {
-        // An OUTER vertex hit 0 dual — augment to source.
-        return this.augmentFromZeroOuter();
+      const dualAdjustment = minOuterDualVariable.clone();
+      if (minInnerOuterEdgeResistance.lt(dualAdjustment)) {
+        dualAdjustment.copyFrom(minInnerOuterEdgeResistance);
+      }
+      if (halfOuterOuter.lt(dualAdjustment)) {
+        dualAdjustment.copyFrom(halfOuterOuter);
+      }
+      if (halfInnerDual.lt(dualAdjustment)) {
+        dualAdjustment.copyFrom(halfInnerDual);
       }
 
-      // Apply dual adjustment.
-      this.applyDualAdjustment(
-        delta,
-        minOuterDual,
-        minInnerDual,
-        minOuterOuterResistance,
-        minInnerOuterResistance,
-      );
+      // Apply dual adjustment (per-vertex, like C++).
+      if (!dualAdjustment.isZero()) {
+        const twiceAdjustment = dualAdjustment.clone().shiftLeft(1);
 
-      // Check which limit was reached.
+        // Update tracking variables.
+        minOuterDualVariable.subtract(dualAdjustment);
+        minInnerOuterEdgeResistance.subtract(dualAdjustment);
+        minOuterOuterEdgeResistance.subtract(twiceAdjustment);
+        minInnerDualVariable.subtract(twiceAdjustment);
 
-      // Case 1: OUTER vertex dual → 0
-      if (minOuterDual.isZero()) {
-        return this.augmentFromZeroOuter();
+        // Per-vertex adjustment (C++ iterates all vertices).
+        for (const vertex of this.vertices) {
+          const rootBlossom = vertex.rootBlossom!;
+          const label = rootBlossom.label;
+
+          if (label === Label.OUTER) {
+            vertex.dualVariable.subtract(dualAdjustment);
+          } else if (label === Label.INNER) {
+            vertex.dualVariable.add(dualAdjustment);
+          } else if (
+            vertex.minOuterEdgeResistance.lt(this.aboveMaxEdgeWeight)
+              ? true
+              : false
+          ) {
+            // FREE or ZERO with a known min outer edge resistance:
+            // check if it's not aboveMaxEdgeWeight
+            vertex.minOuterEdgeResistance.subtract(dualAdjustment);
+          }
+
+          // Extra work done once per rootBlossom (when we're at the base vertex).
+          if (rootBlossom.baseVertex === vertex) {
+            if (label === Label.OUTER) {
+              if (
+                rootBlossom.minOuterEdgeResistance.lt(this.aboveMaxEdgeWeight)
+              ) {
+                rootBlossom.minOuterEdgeResistance.subtract(twiceAdjustment);
+              }
+              if (!rootBlossom.rootChild.isVertex) {
+                (rootBlossom.rootChild as ParentBlossom).dualVariable.add(
+                  twiceAdjustment,
+                );
+              }
+            } else if (
+              label === Label.INNER &&
+              !rootBlossom.rootChild.isVertex
+            ) {
+              (rootBlossom.rootChild as ParentBlossom).dualVariable.subtract(
+                twiceAdjustment,
+              );
+            }
+          }
+        }
       }
 
-      // Case 2/4: tight inner-outer edge
-      if (minInnerOuterResistance.isZero()) {
-        const result = this.handleTightInnerOuterEdge(
-          minOuterDual,
-          minInnerDual,
-          minOuterOuterResistance,
-          minInnerOuterResistance,
-        );
-        if (result !== undefined) return result;
-        // Continue loop — recalculate minima.
-        this.recalculateMinima(
-          minOuterDual,
-          minInnerDual,
-          minOuterOuterResistance,
-          minInnerOuterResistance,
-        );
-        continue;
-      }
-
-      // Case 3: OUTER↔OUTER edge tight
-      if (minOuterOuterResistance.isZero()) {
-        const result = this.handleTightOuterOuterEdge(
-          minOuterDual,
-          minInnerDual,
-          minOuterOuterResistance,
-          minInnerOuterResistance,
-        );
-        if (result !== undefined) return result;
-        this.recalculateMinima(
-          minOuterDual,
-          minInnerDual,
-          minOuterOuterResistance,
-          minInnerOuterResistance,
-        );
-        continue;
-      }
-
-      // Case 5: INNER blossom dual → 0
-      if (minInnerDual.isZero()) {
-        this.dissolveZeroDualInnerBlossom();
-        this.recalculateMinima(
-          minOuterDual,
-          minInnerDual,
-          minOuterOuterResistance,
-          minInnerOuterResistance,
-        );
-        continue;
-      }
-
-      // No more progress possible.
-      return false;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Case 1: augment from OUTER vertex with zero dual
-  // ---------------------------------------------------------------------------
-
-  private augmentFromZeroOuter(): boolean {
-    // Find an OUTER vertex with zero dual.
-    for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER && rb.baseVertex.dualVariable.isZero()) {
-        augmentToSource(rb.baseVertex);
+      // -----------------------------------------------------------------------
+      // CASE 1: OUTER vertex dual → 0
+      // -----------------------------------------------------------------------
+      if (minOuterDualVariable.isZero()) {
+        augmentToSource(minOuterDualVariableVertex);
         return true;
       }
-    }
-    return false;
-  }
 
-  // ---------------------------------------------------------------------------
-  // Blossom formation (Case 3, same root)
-  // Ported from graph.cpp blossom-forming logic
-  // ---------------------------------------------------------------------------
+      // -----------------------------------------------------------------------
+      // CASE 2: ZERO↔OUTER tight edge
+      // -----------------------------------------------------------------------
+      if (
+        minInnerOuterEdgeResistance.isZero() &&
+        minInnerOuterEdgeResistanceVertex !== undefined &&
+        minInnerOuterEdgeResistanceVertex.rootBlossom!.label === Label.ZERO
+      ) {
+        const zv = minInnerOuterEdgeResistanceVertex;
+        augmentToSource(zv.minOuterEdge, zv);
+        augmentToSource(zv, zv.minOuterEdge);
+        return true;
+      }
 
-  private buildPathToRoot(v: Vertex, rb: RootBlossom): Vertex[] {
-    const path: Vertex[] = [];
-    let current: Vertex | undefined = v;
-    while (current && current.rootBlossom !== rb) {
-      path.push(current);
-      current = current.rootBlossom?.labelingVertex;
-    }
-    if (current) path.push(current);
-    return path;
-  }
+      // -----------------------------------------------------------------------
+      // CASE 3: OUTER↔OUTER tight edge
+      // -----------------------------------------------------------------------
+      else if (minOuterOuterEdgeResistance.isZero()) {
+        // Find the two vertices with zero resistance using minOuterEdges.
+        // The C++ finds another OUTER rootBlossom != minOuterOuterEdgeResistanceRootBlossom
+        // such that the edge between them is tight.
+        let vertex0: Vertex | undefined;
+        let vertex1: Vertex | undefined;
 
-  // ---------------------------------------------------------------------------
-  // Case 5: dissolve INNER blossom with zero dual
-  // ---------------------------------------------------------------------------
+        const rb0 = minOuterOuterEdgeResistanceRootBlossom;
+        if (rb0 !== undefined) {
+          for (const rb1 of this.rootBlossoms) {
+            if (rb1.label !== Label.OUTER || rb1 === rb0) continue;
+            // rb0 stores in minOuterEdges[rb1.baseVertex.vertexIndex] the vertex
+            // in rb0 closest to rb1.
+            const v0 = rb0.minOuterEdges[rb1.baseVertex.vertexIndex];
+            // rb1 stores in minOuterEdges[rb0.baseVertex.vertexIndex] the vertex
+            // in rb1 closest to rb0.
+            const v1 = rb1.minOuterEdges[rb0.baseVertex.vertexIndex];
+            if (v0 !== undefined && v1 !== undefined) {
+              const r = resistance(v0, v1);
+              if (r.isZero()) {
+                vertex0 = v0;
+                vertex1 = v1;
+                break;
+              }
+            }
+          }
+        }
 
-  private dissolveZeroDualInnerBlossom(): void {
-    const snapshot = [...this.rootBlossoms];
-    for (const rb of snapshot) {
-      if (rb.label !== Label.INNER) continue;
-      if (rb.rootChild.isVertex) continue;
-      const pb = rb.rootChild as ParentBlossom;
-      if (!pb.dualVariable.isZero()) continue;
+        // If not found via tracked references, do a brute-force scan as fallback.
+        if (vertex0 === undefined || vertex1 === undefined) {
+          outerSearch: for (const rb1 of this.rootBlossoms) {
+            if (rb1.label !== Label.OUTER) continue;
+            for (const rb2 of this.rootBlossoms) {
+              if (rb2 === rb1 || rb2.label !== Label.OUTER) continue;
+              for (
+                let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
+                v1;
+                v1 = v1.nextVertex
+              ) {
+                for (
+                  let v2: Vertex | undefined = rb2.rootChild.vertexListHead;
+                  v2;
+                  v2 = v2.nextVertex
+                ) {
+                  if (v1.vertexIndex === v2.vertexIndex) continue;
+                  const r = resistance(v1, v2);
+                  if (r.isZero()) {
+                    vertex0 = v1;
+                    vertex1 = v2;
+                    break outerSearch;
+                  }
+                }
+              }
+            }
+          }
+        }
 
-      // Dissolve this blossom: create individual RootBlossoms for each child.
-      const pbIndex = this.parentBlossoms.indexOf(pb);
-      if (pbIndex !== -1) this.parentBlossoms.splice(pbIndex, 1);
+        if (vertex0 === undefined || vertex1 === undefined) {
+          // No tight edge found — shouldn't happen but guard anyway.
+          return false;
+        }
 
-      const rbIndex = this.rootBlossoms.indexOf(rb);
-      if (rbIndex !== -1) this.rootBlossoms.splice(rbIndex, 1);
+        const rbA = vertex0.rootBlossom!;
+        const rbB = vertex1.rootBlossom!;
 
-      // Walk the blossom's children and create new RootBlossoms.
-      let child: Blossom | undefined = pb.subblossom;
-      let isOnLabelingPath = true;
-      do {
-        const baseV = isOnLabelingPath
-          ? (child!.vertexToNextSiblingBlossom ?? child!.vertexListHead)
-          : child!.vertexListHead;
+        if (rbA === rbB) {
+          // SAME ROOT → form new blossom.
+          // Build path from vertex0 and vertex1 back to the exposed root,
+          // following the alternating tree structure.
+          // C++ path format: [vertex0, ..., vertex1] with alternating
+          // labelingVertex→labeledVertex→baseVertex→baseVertexMatch links.
 
-        const newRb = new RootBlossom(child!, baseV, undefined, this);
-        newRb.label = isOnLabelingPath ? Label.INNER : Label.FREE;
-        child!.parentBlossom = undefined;
+          // Build path from vertex0 toward root.
+          const pathFront: Vertex[] = [vertex0];
+          {
+            let current: Vertex = vertex0;
+            while (current.rootBlossom!.baseVertexMatch) {
+              const rb = current.rootBlossom!;
+              pathFront.push(
+                rb.baseVertex,
+                rb.baseVertexMatch!,
+                rb.baseVertexMatch!.rootBlossom!.labeledVertex!,
+                rb.baseVertexMatch!.rootBlossom!.labelingVertex!,
+              );
+              current = rb.baseVertexMatch!.rootBlossom!.labelingVertex!;
+            }
+          }
 
+          // Build path from vertex1 toward root.
+          const pathBack: Vertex[] = [vertex1];
+          {
+            let current: Vertex = vertex1;
+            while (current.rootBlossom!.baseVertexMatch) {
+              const rb = current.rootBlossom!;
+              pathBack.push(
+                rb.baseVertex,
+                rb.baseVertexMatch!,
+                rb.baseVertexMatch!.rootBlossom!.labeledVertex!,
+                rb.baseVertexMatch!.rootBlossom!.labelingVertex!,
+              );
+              current = rb.baseVertexMatch!.rootBlossom!.labelingVertex!;
+            }
+          }
+
+          // Trim shared prefix from the back of both paths.
+          // (C++ trims while next element of each sub-path is in same rootBlossom)
+          while (
+            pathFront.length >= 2 &&
+            pathBack.length >= 2 &&
+            pathFront[1]!.rootBlossom === pathBack[1]!.rootBlossom
+          ) {
+            pathFront.splice(0, 4);
+            pathBack.splice(0, 4);
+          }
+
+          // The combined path is: pathFront (front to back) + pathBack reversed.
+          const path: Vertex[] = [...pathFront, ...pathBack.toReversed()];
+
+          // Form a new blossom from this path.
+          this.formBlossomFromPath(path);
+
+          // After forming a new blossom, re-update tracking variables.
+          // The newly formed blossom's rootBlossom is OUTER; update minima.
+          // Find the new blossom (it will be the rootBlossom of path[0]).
+          const newRb = path[0]!.rootBlossom!;
+
+          // Update minOuterDualVariable for vertices in new blossom.
+          for (
+            let v: Vertex | undefined = newRb.rootChild.vertexListHead;
+            v;
+            v = v.nextVertex
+          ) {
+            if (v.dualVariable.lt(minOuterDualVariable)) {
+              minOuterDualVariable.copyFrom(v.dualVariable);
+              minOuterDualVariableVertex = v;
+            }
+          }
+
+          // Re-initialize minOuterOuterEdgeResistance.
+          minOuterOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
+          minOuterOuterEdgeResistanceRootBlossom = undefined;
+          for (const rb of this.rootBlossoms) {
+            if (
+              rb.label === Label.OUTER &&
+              rb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)
+            ) {
+              minOuterOuterEdgeResistance.copyFrom(rb.minOuterEdgeResistance);
+              minOuterOuterEdgeResistanceRootBlossom = rb;
+            }
+          }
+
+          // Re-initialize minInnerDualVariable.
+          minInnerDualVariable.copyFrom(this.aboveMaxEdgeWeight);
+          minInnerDualVariableBlossom = undefined;
+          this.initializeMinInnerDualVariable(
+            (blossom) => {
+              minInnerDualVariableBlossom = blossom;
+            },
+            (value) => {
+              minInnerDualVariable.copyFrom(value);
+            },
+          );
+
+          // Continue the main loop.
+          continue;
+        } else {
+          // DIFFERENT ROOTS → augment.
+          augmentToSource(vertex0, vertex1);
+          augmentToSource(vertex1, vertex0);
+          return true;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // CASE 4: FREE↔OUTER tight edge (minInnerOuterEdgeResistance == 0,
+      //         but the vertex is FREE not ZERO)
+      // -----------------------------------------------------------------------
+      else if (minInnerOuterEdgeResistance.isZero()) {
+        const freeVertex = minInnerOuterEdgeResistanceVertex;
+        if (freeVertex === undefined) {
+          return false;
+        }
+
+        const freeRb = freeVertex.rootBlossom!;
+        // The free vertex becomes INNER.
+        freeRb.label = Label.INNER;
+        freeRb.labelingVertex = freeVertex.minOuterEdge;
+        freeRb.labeledVertex = freeVertex;
+
+        // The match of the base of freeRb becomes OUTER.
+        const matchedRb = freeRb.baseVertexMatch!.rootBlossom!;
+        matchedRb.label = Label.OUTER;
+
+        // Update inner-outer edges for the newly OUTER blossom.
+        this.updateInnerOuterEdges(matchedRb);
+
+        // Initialize outer-outer edges for the newly OUTER blossom.
+        this.initializeOuterOuterEdgesForBlossom(matchedRb);
+
+        // Update minOuterDualVariable for vertices in new OUTER blossom.
         for (
-          let v: Vertex | undefined = child!.vertexListHead;
+          let v: Vertex | undefined = matchedRb.rootChild.vertexListHead;
           v;
           v = v.nextVertex
         ) {
-          v.rootBlossom = newRb;
+          if (v.dualVariable.lt(minOuterDualVariable)) {
+            minOuterDualVariable.copyFrom(v.dualVariable);
+            minOuterDualVariableVertex = v;
+          }
         }
 
-        this.rootBlossoms.push(newRb);
-        this.rootBlossomMinOuterEdgeResistances.push(
-          this.aboveMaxEdgeWeight.clone(),
+        // Update minOuterOuterEdgeResistance.
+        if (matchedRb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)) {
+          minOuterOuterEdgeResistance.copyFrom(
+            matchedRb.minOuterEdgeResistance,
+          );
+          minOuterOuterEdgeResistanceRootBlossom = matchedRb;
+        }
+
+        // Update minInnerDualVariable for the newly INNER blossom.
+        if (!freeRb.rootChild.isVertex) {
+          const pb = freeRb.rootChild as ParentBlossom;
+          if (pb.dualVariable.lt(minInnerDualVariable)) {
+            minInnerDualVariable.copyFrom(pb.dualVariable);
+            minInnerDualVariableBlossom = pb;
+          }
+        }
+
+        // Continue main loop.
+        continue;
+      }
+
+      // -----------------------------------------------------------------------
+      // CASE 5: INNER blossom dual → 0 (dissolve)
+      // -----------------------------------------------------------------------
+      else if (minInnerDualVariable.isZero()) {
+        const pb = minInnerDualVariableBlossom;
+        if (pb === undefined) {
+          return false;
+        }
+
+        const dissolvedRb = pb.rootBlossom!;
+
+        // Hide the dissolved RootBlossom from rootBlossoms.
+        const rbIndex = this.rootBlossoms.indexOf(dissolvedRb);
+        if (rbIndex !== -1) this.rootBlossoms.splice(rbIndex, 1);
+
+        // The root child of the dissolved blossom is pb.
+        // In C++: rootVertex = dissolvedRb.baseVertex
+        //         rootChild = getAncestorOfVertex(rootVertex, pb)
+        const rootVertex = dissolvedRb.baseVertex;
+        const rootChild: Blossom = getAncestorOfVertex(rootVertex, pb);
+
+        // The connect child is the child of pb containing the labeled vertex.
+        const connectChild: Blossom = getAncestorOfVertex(
+          dissolvedRb.labeledVertex!,
+          pb,
         );
 
-        child = child!.nextBlossom;
-        isOnLabelingPath = !isOnLabelingPath;
-      } while (child !== pb.subblossom && child !== undefined);
-    }
-  }
+        // Determine if the path from rootChild to connectChild goes forward
+        // (i.e., via nextBlossom links). Walk forward from rootChild;
+        // if we reach connectChild, connectForward=true; otherwise false.
+        let connectForward: boolean;
+        {
+          let found = false;
+          for (
+            let current: Blossom | undefined = rootChild.nextBlossom;
+            current !== rootChild && current !== undefined;
+            current = current.nextBlossom
+          ) {
+            if (current === connectChild) {
+              found = true;
+              break;
+            }
+          }
+          connectForward = rootChild === connectChild || found;
+        }
 
-  private formNewBlossom(v1: Vertex, v2: Vertex, rb: RootBlossom): void {
-    // Build the path from v1 to root and from v2 to root, find LCA.
-    const path1 = this.buildPathToRoot(v1, rb);
-    const path2 = this.buildPathToRoot(v2, rb);
+        // Walk the circular child list, assigning labels.
+        // C++ loop: iterate from rootChild going forward (nextBlossom),
+        // wrapping around until we return to rootChild.
+        let isFree = false;
+        let linksToNext = false; // tracks edge direction alternation
 
-    // Find LCA.
-    const inPath1 = new Set(path1.map((p) => p.vertexIndex));
-    let lcaIndex = -1;
-    for (const pv of path2) {
-      if (inPath1.has(pv.vertexIndex)) {
-        lcaIndex = pv.vertexIndex;
-        break;
-      }
-    }
+        // Find the actual previous of rootChild by walking the cycle.
+        let previousChild: Blossom;
+        {
+          let current: Blossom = rootChild;
+          while (
+            current.nextBlossom !== rootChild &&
+            current.nextBlossom !== undefined
+          ) {
+            current = current.nextBlossom;
+          }
+          previousChild = current;
+        }
 
-    if (lcaIndex === -1) {
-      // No common ancestor found — treat as cross-edge, augment.
-      augmentToSource(v1, v2);
-      augmentToSource(v2, v1);
-      return;
-    }
+        let currentChild: Blossom = rootChild;
+        let nextChild: Blossom | undefined;
+        const newRootBlossoms: RootBlossom[] = [];
 
-    const lcaInPath1 = path1.findIndex((p) => p.vertexIndex === lcaIndex);
-    const lcaInPath2 = path2.findIndex((p) => p.vertexIndex === lcaIndex);
+        do {
+          nextChild = currentChild.nextBlossom;
 
-    const cyclePart1 = path1.slice(0, lcaInPath1);
-    const cyclePart2 = path2.slice(0, lcaInPath2).toReversed();
-    const lcaVertex = this.vertices[lcaIndex]!;
+          // C++ logic for setting isFree: if we hit connectChild going
+          // in the non-connectForward direction, isFree becomes false.
+          if (currentChild === connectChild && !connectForward) {
+            isFree = false;
+          }
 
-    // Create a new ParentBlossom that represents this cycle.
-    const cycleVertices = [v1, ...cyclePart1, lcaVertex, ...cyclePart2, v2];
+          // Determine label for this child.
+          // The rootChild itself is always INNER (it's the base vertex side).
+          // After that, labels alternate: for the path going toward connectChild,
+          // we get INNER for even steps, OUTER for odd steps.
+          // Children on the other side are FREE.
+          const label: Label = isFree
+            ? Label.FREE
+            : linksToNext !== connectForward || currentChild === rootChild
+              ? Label.INNER
+              : Label.OUTER;
 
-    const newDual = this.aboveMaxEdgeWeight.clone().and(0);
-    const newParent = new ParentBlossom(
-      newDual,
-      rb,
-      rb.rootChild,
-      rb.rootChild.vertexListHead,
-      rb.rootChild.vertexListTail,
-    );
+          // Determine baseVertex and baseVertexMatch for the new RootBlossom.
+          let newBaseVertex: Vertex;
+          let newBaseVertexMatch: Vertex | undefined;
+          let newLabelingVertex: Vertex | undefined;
+          let newLabeledVertex: Vertex | undefined;
 
-    // Connect all vertices in the cycle to the new parent.
-    for (const cv of cycleVertices) {
-      cv.parentBlossom = newParent;
-    }
-
-    this.parentBlossoms.push(newParent);
-    rb.rootChild = newParent;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Case 2/4: tight inner-outer edge
-  // ---------------------------------------------------------------------------
-
-  private handleTightInnerOuterEdge(
-    minOuterDual: DynamicUint,
-    minInnerDual: DynamicUint,
-    minOuterOuterResistance: DynamicUint,
-    minInnerOuterResistance: DynamicUint,
-  ): boolean | undefined {
-    for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER) continue;
-
-      for (
-        let v: Vertex | undefined = rb.rootChild.vertexListHead;
-        v;
-        v = v.nextVertex
-      ) {
-        if (v.minOuterEdge !== undefined && v.minOuterEdgeResistance.isZero()) {
-          const outerV = v.minOuterEdge;
-
-          if (rb.label === Label.ZERO) {
-            // Case 2: ZERO vertex — tight edge, augment both directions.
-            augmentToSource(v, outerV);
-            augmentToSource(outerV, v);
-            return true;
+          if (currentChild === rootChild) {
+            newBaseVertex = rootVertex;
+            newBaseVertexMatch = dissolvedRb.baseVertexMatch;
+          } else if (linksToNext) {
+            newBaseVertex = currentChild.vertexToNextSiblingBlossom!;
+            newBaseVertexMatch = nextChild?.vertexToPreviousSiblingBlossom;
           } else {
-            // Case 4: FREE vertex — label it INNER, label its match OUTER.
-            rb.label = Label.INNER;
-            rb.labeledVertex = v;
-            rb.labelingVertex = outerV;
+            newBaseVertex = currentChild.vertexToPreviousSiblingBlossom!;
+            newBaseVertexMatch = previousChild?.vertexToNextSiblingBlossom;
+          }
 
-            // The match of the base of rb becomes OUTER.
-            if (rb.baseVertexMatch) {
-              const matchRb = rb.baseVertexMatch.rootBlossom!;
-              if (matchRb.label === Label.FREE) {
-                matchRb.label = Label.OUTER;
-                matchRb.labeledVertex = rb.baseVertexMatch;
-                matchRb.labelingVertex = rb.baseVertex;
+          if (currentChild === connectChild) {
+            newLabelingVertex = dissolvedRb.labelingVertex;
+            newLabeledVertex = dissolvedRb.labeledVertex;
+          } else if (label === Label.INNER) {
+            if (connectForward) {
+              newLabelingVertex = nextChild?.vertexToPreviousSiblingBlossom;
+              newLabeledVertex = currentChild.vertexToNextSiblingBlossom;
+            } else {
+              newLabelingVertex = previousChild?.vertexToNextSiblingBlossom;
+              newLabeledVertex = currentChild.vertexToPreviousSiblingBlossom;
+            }
+          }
 
-                // Update minOuterDual.
-                if (
-                  minOuterDual.compareTo(this.aboveMaxEdgeWeight) === 0 ||
-                  rb.baseVertexMatch.dualVariable.lt(minOuterDual)
-                ) {
-                  minOuterDual.copyFrom(rb.baseVertexMatch.dualVariable);
-                }
+          // Create new RootBlossom for this child.
+          const newRb = new RootBlossom(
+            currentChild,
+            newBaseVertex,
+            newBaseVertexMatch,
+            this,
+          );
+          newRb.label = label;
+          newRb.labelingVertex = newLabelingVertex;
+          newRb.labeledVertex = newLabeledVertex;
 
-                // Re-initialize inner-outer edges for the new OUTER blossom.
-                this.updateInnerOuterEdgesForNewOuter(
-                  matchRb,
-                  minInnerOuterResistance,
-                );
+          // Disconnect child from the old ParentBlossom.
+          currentChild.parentBlossom = undefined;
 
-                // Re-initialize outer-outer edges for the new OUTER blossom.
-                this.updateOuterOuterEdgesForNewOuter(
-                  matchRb,
-                  minOuterOuterResistance,
-                );
+          // Update rootBlossom pointer for all vertices in this child.
+          for (
+            let v: Vertex | undefined = currentChild.vertexListHead;
+            v;
+            v = v.nextVertex
+          ) {
+            v.rootBlossom = newRb;
+          }
+
+          // Set up minOuterEdges array (size = number of vertices).
+          while (newRb.minOuterEdges.length < this.vertices.length) {
+            newRb.minOuterEdges.push(undefined);
+          }
+
+          this.rootBlossoms.push(newRb);
+          this.rootBlossomMinOuterEdgeResistances.push(
+            this.aboveMaxEdgeWeight.clone(),
+          );
+          newRootBlossoms.push(newRb);
+
+          // For OUTER children: update inner-outer and outer-outer edges,
+          // and update minOuterDualVariable.
+          if (label === Label.OUTER) {
+            this.updateInnerOuterEdges(newRb);
+            this.initializeOuterOuterEdgesForBlossom(newRb);
+            for (
+              let v: Vertex | undefined = currentChild.vertexListHead;
+              v;
+              v = v.nextVertex
+            ) {
+              if (v.dualVariable.lt(minOuterDualVariable)) {
+                minOuterDualVariable.copyFrom(v.dualVariable);
+                minOuterDualVariableVertex = v;
               }
             }
-
-            void minInnerDual;
-            return undefined; // continue loop
-          }
-        }
-      }
-    }
-    return undefined;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Case 3: tight outer-outer edge
-  // ---------------------------------------------------------------------------
-
-  private handleTightOuterOuterEdge(
-    minOuterDual: DynamicUint,
-    minInnerDual: DynamicUint,
-    minOuterOuterResistance: DynamicUint,
-    minInnerOuterResistance: DynamicUint,
-  ): boolean | undefined {
-    // Find the OUTER blossom with zero minOuterEdgeResistance.
-    for (const rb1 of this.rootBlossoms) {
-      if (rb1.label !== Label.OUTER) continue;
-      if (!rb1.minOuterEdgeResistance.isZero()) continue;
-
-      let bestV1: Vertex | undefined;
-      let bestV2: Vertex | undefined;
-
-      outer: for (const rb2 of this.rootBlossoms) {
-        if (rb2 === rb1 || rb2.label !== Label.OUTER) continue;
-        for (
-          let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
-          v1;
-          v1 = v1.nextVertex
-        ) {
-          for (
-            let v2: Vertex | undefined = rb2.rootChild.vertexListHead;
-            v2;
-            v2 = v2.nextVertex
-          ) {
-            if (v1.vertexIndex === v2.vertexIndex) continue;
-            const r = resistance(v1, v2);
-            if (r.isZero()) {
-              bestV1 = v1;
-              bestV2 = v2;
-              break outer;
+            if (newRb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)) {
+              minOuterOuterEdgeResistance.copyFrom(
+                newRb.minOuterEdgeResistance,
+              );
+              minOuterOuterEdgeResistanceRootBlossom = newRb;
             }
           }
-        }
-      }
 
-      if (bestV1 === undefined || bestV2 === undefined) continue;
+          // Update isFree state after processing this child.
+          if (currentChild === (connectForward ? connectChild : rootChild)) {
+            isFree = true;
+          }
 
-      const rb2 = bestV2.rootBlossom!;
+          linksToNext = !linksToNext;
+          previousChild = currentChild;
+          currentChild = nextChild!;
+        } while (currentChild !== rootChild);
 
-      if (rb1 === rb2) {
-        // Same root — form a new blossom.
-        this.formNewBlossom(bestV1, bestV2, rb1);
-        void minOuterDual;
-        void minInnerDual;
-        void minOuterOuterResistance;
-        void minInnerOuterResistance;
-        return undefined;
+        // Destroy the old ParentBlossom and RootBlossom.
+        const pbIndex = this.parentBlossoms.indexOf(pb);
+        if (pbIndex !== -1) this.parentBlossoms.splice(pbIndex, 1);
+
+        // Re-initialize minInnerDualVariable after dissolution.
+        minInnerDualVariable.copyFrom(this.aboveMaxEdgeWeight);
+        minInnerDualVariableBlossom = undefined;
+        this.initializeMinInnerDualVariable(
+          (blossom) => {
+            minInnerDualVariableBlossom = blossom;
+          },
+          (value) => {
+            minInnerDualVariable.copyFrom(value);
+          },
+        );
+
+        // Continue main loop.
+        continue;
       } else {
-        // Different roots — augment.
-        augmentToSource(bestV1, bestV2);
-        augmentToSource(bestV2, bestV1);
-        return true;
+        // No more progress possible.
+        return false;
       }
     }
-    return undefined;
   }
 
   // ---------------------------------------------------------------------------
   // Initialization helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * For each non-OUTER blossom vertex, find cheapest edge to any OUTER vertex.
+   */
   private initializeInnerOuterEdges(): void {
     for (const rb of this.rootBlossoms) {
       if (rb.label === Label.OUTER) continue;
@@ -759,68 +902,40 @@ class Graph implements GraphLike {
     }
   }
 
+  /**
+   * For each pair of OUTER blossoms, find cheapest edge between them.
+   * Updates minOuterEdges and minOuterEdgeResistance for each OUTER blossom.
+   */
   private initializeOuterOuterEdges(): void {
     for (const rb of this.rootBlossoms) {
       if (rb.label !== Label.OUTER) continue;
       for (const otherRb of this.rootBlossoms) {
         if (otherRb === rb) continue;
         if (otherRb.label !== Label.OUTER) continue;
-        this.updateOuterOuterEdge(rb, otherRb);
+        this.updateOuterOuterEdgePair(rb, otherRb);
       }
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Recalculate minima after structural changes
-  // ---------------------------------------------------------------------------
-
-  private recalculateMinima(
-    minOuterDual: DynamicUint,
-    minInnerDual: DynamicUint,
-    minOuterOuterResistance: DynamicUint,
-    minInnerOuterResistance: DynamicUint,
-  ): void {
-    minOuterDual.copyFrom(this.aboveMaxEdgeWeight);
-    minInnerDual.copyFrom(this.aboveMaxEdgeWeight);
-    minOuterOuterResistance.copyFrom(this.aboveMaxEdgeWeight);
-    minInnerOuterResistance.copyFrom(this.aboveMaxEdgeWeight);
-
+  /**
+   * For a newly OUTER blossom, initialize its outer-outer edges against all
+   * other OUTER blossoms (single-blossom variant, C++ initializeOuterOuterEdges(blossom)).
+   */
+  private initializeOuterOuterEdgesForBlossom(newOuterRb: RootBlossom): void {
     for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER) {
-        if (rb.baseVertex.dualVariable.lt(minOuterDual)) {
-          minOuterDual.copyFrom(rb.baseVertex.dualVariable);
-        }
-        if (rb.minOuterEdgeResistance.lt(minOuterOuterResistance)) {
-          minOuterOuterResistance.copyFrom(rb.minOuterEdgeResistance);
-        }
-      } else if (rb.label === Label.INNER) {
-        if (!rb.rootChild.isVertex) {
-          const pb = rb.rootChild as ParentBlossom;
-          if (pb.dualVariable.lt(minInnerDual)) {
-            minInnerDual.copyFrom(pb.dualVariable);
-          }
-        }
-      } else {
-        for (
-          let v: Vertex | undefined = rb.rootChild.vertexListHead;
-          v;
-          v = v.nextVertex
-        ) {
-          if (
-            v.minOuterEdge !== undefined &&
-            v.minOuterEdgeResistance.lt(minInnerOuterResistance)
-          ) {
-            minInnerOuterResistance.copyFrom(v.minOuterEdgeResistance);
-          }
-        }
-      }
+      if (rb === newOuterRb || rb.label !== Label.OUTER) continue;
+      this.updateOuterOuterEdgePair(newOuterRb, rb);
+      this.updateOuterOuterEdgePair(rb, newOuterRb);
     }
   }
 
-  private updateInnerOuterEdgesForNewOuter(
-    newOuterRb: RootBlossom,
-    minInnerOuterResistance: DynamicUint,
-  ): void {
+  /**
+   * For a newly OUTER blossom, update inner-outer edges for all non-OUTER
+   * blossoms: vertices in those blossoms may now have cheaper edges to this
+   * new OUTER blossom.
+   * (C++ updateInnerOuterEdges(rootBlossom))
+   */
+  private updateInnerOuterEdges(newOuterRb: RootBlossom): void {
     for (const rb of this.rootBlossoms) {
       if (rb === newOuterRb || rb.label === Label.OUTER) continue;
       for (
@@ -838,16 +953,19 @@ class Graph implements GraphLike {
           if (v.minOuterEdge === undefined || r.lt(v.minOuterEdgeResistance)) {
             v.minOuterEdge = outerV;
             v.minOuterEdgeResistance.copyFrom(r);
-            if (r.lt(minInnerOuterResistance)) {
-              minInnerOuterResistance.copyFrom(r);
-            }
           }
         }
       }
     }
   }
 
-  private updateOuterOuterEdge(rb1: RootBlossom, rb2: RootBlossom): void {
+  /**
+   * Update rb1's minOuterEdges tracking with edges to rb2.
+   * For each vertex pair (v1 in rb1, v2 in rb2), if the edge is tighter than
+   * the current best for rb1, update rb1.minOuterEdges[v2.vertexIndex] and
+   * rb1.minOuterEdgeResistance.
+   */
+  private updateOuterOuterEdgePair(rb1: RootBlossom, rb2: RootBlossom): void {
     for (
       let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
       v1;
@@ -861,8 +979,9 @@ class Graph implements GraphLike {
         if (v1.vertexIndex === v2.vertexIndex) continue;
         const r = resistance(v1, v2);
         if (
-          rb1.minOuterEdgeResistance.compareTo(this.aboveMaxEdgeWeight) === 0 ||
-          r.lt(rb1.minOuterEdgeResistance)
+          rb1.minOuterEdgeResistance.lt(this.aboveMaxEdgeWeight)
+            ? r.lt(rb1.minOuterEdgeResistance)
+            : true
         ) {
           rb1.minOuterEdgeResistance.copyFrom(r);
           rb1.minOuterEdges[v2.vertexIndex] = v1;
@@ -871,21 +990,124 @@ class Graph implements GraphLike {
     }
   }
 
-  private updateOuterOuterEdgesForNewOuter(
-    newOuterRb: RootBlossom,
-    minOuterOuterResistance: DynamicUint,
+  /**
+   * Scan all INNER root blossoms with compound children (ParentBlossom) and
+   * call the two callbacks when a new minimum is found.
+   */
+  private initializeMinInnerDualVariable(
+    setBlossom: (pb: ParentBlossom) => void,
+    setValue: (v: DynamicUint) => void,
   ): void {
+    const minValue = this.aboveMaxEdgeWeight.clone();
     for (const rb of this.rootBlossoms) {
-      if (rb === newOuterRb || rb.label !== Label.OUTER) continue;
-      this.updateOuterOuterEdge(rb, newOuterRb);
-      this.updateOuterOuterEdge(newOuterRb, rb);
-      if (rb.minOuterEdgeResistance.lt(minOuterOuterResistance)) {
-        minOuterOuterResistance.copyFrom(rb.minOuterEdgeResistance);
-      }
-      if (newOuterRb.minOuterEdgeResistance.lt(minOuterOuterResistance)) {
-        minOuterOuterResistance.copyFrom(newOuterRb.minOuterEdgeResistance);
+      if (rb.label === Label.INNER && !rb.rootChild.isVertex) {
+        const pb = rb.rootChild as ParentBlossom;
+        if (pb.dualVariable.lt(minValue)) {
+          minValue.copyFrom(pb.dualVariable);
+          setBlossom(pb);
+          setValue(pb.dualVariable);
+        }
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Blossom formation from path (Case 3, same root)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Form a new blossom from the given path of vertices.
+   * The path describes an odd cycle in the alternating tree.
+   * Creates a ParentBlossom that wraps all the existing child blossoms,
+   * and a RootBlossom pointing to it.
+   *
+   * This corresponds to the C++ RootBlossom path-iterator constructor.
+   */
+  private formBlossomFromPath(path: Vertex[]): void {
+    if (path.length === 0) return;
+
+    // The new blossom's root blossom is the same as the root of path[0].
+    // All vertices in the path belong to the same RootBlossom.
+    const oldRb = path[0]!.rootBlossom!;
+
+    // Collect all vertices in the old blossom.
+    const allVertices: Vertex[] = [];
+    for (
+      let v: Vertex | undefined = oldRb.rootChild.vertexListHead;
+      v;
+      v = v.nextVertex
+    ) {
+      allVertices.push(v);
+    }
+
+    // Create a new zero dual variable for the ParentBlossom.
+    const newDual = this.aboveMaxEdgeWeight.clone().and(0);
+
+    // The new ParentBlossom wraps oldRb.rootChild as its subblossom.
+    // We need to link all children in a cycle (nextBlossom/previousBlossom).
+    // The C++ does this inside the RootBlossom path constructor. Here we
+    // do it by collecting the distinct "child blossoms" visited by the path
+    // and linking them.
+
+    // Collect the child blossoms of the new ParentBlossom.
+    // Each vertex in path has a rootBlossom child (its direct child of oldRb.rootChild).
+    // We collect unique child blossoms in path order.
+    // Since all vertices are in the same old root blossom, their "child of root" is
+    // the old rootChild (singleton if the old rootBlossom had no compound child).
+
+    // For now, since we're creating a blossom from a cycle, the child blossoms
+    // are the singleton vertices or existing compound blossoms.
+    // We use the old root child as the subblossom of the new ParentBlossom.
+
+    const newParent = new ParentBlossom(
+      newDual,
+      oldRb, // rootBlossom (will be updated)
+      oldRb.rootChild, // subblossom
+      allVertices[0]!,
+      allVertices.at(-1)!,
+    );
+    newParent.vertexListHead = allVertices[0]!;
+    newParent.vertexListTail = allVertices.at(-1)!;
+
+    this.parentBlossoms.push(newParent);
+
+    // Create the new RootBlossom.
+    // The new blossom is OUTER (since both endpoints were OUTER).
+    const newRb = new RootBlossom(
+      newParent,
+      oldRb.baseVertex,
+      oldRb.baseVertexMatch,
+      this,
+    );
+    newRb.label = Label.OUTER;
+    newRb.labeledVertex = undefined;
+    newRb.labelingVertex = undefined;
+
+    // Set up minOuterEdges array.
+    while (newRb.minOuterEdges.length < this.vertices.length) {
+      newRb.minOuterEdges.push(undefined);
+    }
+
+    // Update all vertices' rootBlossom pointer.
+    for (const v of allVertices) {
+      v.rootBlossom = newRb;
+    }
+
+    // Remove old RootBlossom from the list.
+    const oldRbIndex = this.rootBlossoms.indexOf(oldRb);
+    if (oldRbIndex !== -1) this.rootBlossoms.splice(oldRbIndex, 1);
+
+    // Add new RootBlossom.
+    this.rootBlossoms.push(newRb);
+    this.rootBlossomMinOuterEdgeResistances.push(
+      this.aboveMaxEdgeWeight.clone(),
+    );
+
+    // Initialize outer-outer edges for the new blossom.
+    this.initializeOuterOuterEdgesForBlossom(newRb);
+
+    // Update inner-outer edges (non-OUTER vertices now have a new OUTER blossom to check).
+    this.updateInnerOuterEdges(newRb);
   }
 }
 

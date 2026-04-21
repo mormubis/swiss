@@ -657,5 +657,79 @@ describe('MatchingComputer', () => {
       // Original pairs should be preserved (not rearranged).
       expect(mc.getMatching()).toEqual([1, 0, 3, 2]);
     });
+
+    it('sequential setEdgeWeight + computeMatching cycles — no infinite loop', () => {
+      // 6 vertices, multiple compute cycles with changing edge weights.
+      // This exercises the augmentMatching loop repeatedly to catch infinite loops.
+      const mc = new MatchingComputer(DynamicUint.from(100));
+      for (let index = 0; index < 6; index++) mc.addVertex();
+
+      // Round 1: simple disjoint pairs.
+      mc.setEdgeWeight(0, 1, DynamicUint.from(80));
+      mc.setEdgeWeight(2, 3, DynamicUint.from(70));
+      mc.setEdgeWeight(4, 5, DynamicUint.from(60));
+      mc.computeMatching();
+      const m1 = mc.getMatching();
+      expect(m1[0]).toBe(1);
+      expect(m1[1]).toBe(0);
+      expect(m1[2]).toBe(3);
+      expect(m1[3]).toBe(2);
+      expect(m1[4]).toBe(5);
+      expect(m1[5]).toBe(4);
+
+      // Round 2: add cross edges that compete with existing pairs.
+      mc.setEdgeWeight(0, 2, DynamicUint.from(30));
+      mc.setEdgeWeight(1, 3, DynamicUint.from(30));
+      mc.computeMatching();
+      const m2 = mc.getMatching();
+      // Total weight of m2 should equal that from reference algorithm.
+      const edgeWeights2 = new Map([
+        ['0-1', 80],
+        ['2-3', 70],
+        ['4-5', 60],
+        ['0-2', 30],
+        ['1-3', 30],
+      ]);
+      const referenceEdges2: [number, number, number][] = [
+        [0, 1, 80],
+        [2, 3, 70],
+        [4, 5, 60],
+        [0, 2, 30],
+        [1, 3, 30],
+      ];
+      const reference2 = maxWeightMatching(
+        referenceEdges2.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      expect(totalWeight(normalizeMatching(m2), edgeWeights2)).toBe(
+        totalWeight(reference2, edgeWeights2),
+      );
+
+      // Round 3: change a weight to reshape the optimal matching.
+      mc.setEdgeWeight(0, 5, DynamicUint.from(90));
+      mc.computeMatching();
+      const m3 = mc.getMatching();
+      const edgeWeights3 = new Map([
+        ['0-1', 80],
+        ['2-3', 70],
+        ['4-5', 60],
+        ['0-2', 30],
+        ['1-3', 30],
+        ['0-5', 90],
+      ]);
+      const referenceEdges3: [number, number, number][] = [
+        [0, 1, 80],
+        [2, 3, 70],
+        [4, 5, 60],
+        [0, 2, 30],
+        [1, 3, 30],
+        [0, 5, 90],
+      ];
+      const reference3 = maxWeightMatching(
+        referenceEdges3.map(([u, v, w]) => [u, v, DynamicUint.from(w)]),
+      );
+      expect(totalWeight(normalizeMatching(m3), edgeWeights3)).toBe(
+        totalWeight(reference3, edgeWeights3),
+      );
+    });
   });
 });
