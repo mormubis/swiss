@@ -177,6 +177,7 @@ type TraceEvent = BlossomTraceEvent | PairingTraceEvent;
 type TraceCallback = (event: TraceEvent) => void;
 
 interface PairOptions {
+  expectedRounds?: number;
   trace?: TraceCallback;
 }
 

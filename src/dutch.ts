@@ -545,7 +545,7 @@ function pair(
 
   const trace = options?.trace;
   const playedRounds = games.length;
-  const expectedRounds = playedRounds + 1;
+  const expectedRounds = options?.expectedRounds ?? playedRounds + 1;
   const states = buildPlayerStates(players, games);
 
   // Sort: score DESC, TPN ASC

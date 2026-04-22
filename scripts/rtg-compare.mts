@@ -6,7 +6,6 @@ import { parse } from '@echecs/trf';
 import { execSync } from 'node:child_process';
 import { readFileSync, unlinkSync } from 'node:fs';
 
-
 import { pair } from '../src/dutch.js';
 
 import type { Game, GameKind, Player } from '../src/types.js';
@@ -41,7 +40,8 @@ function trfToSwiss(raw: string): TournamentData | undefined {
     for (const result of player.results) {
       const ri = result.round - 1;
       if (!roundArrays[ri]) continue;
-      if (result.opponentId === undefined) {
+       
+      if (result.opponentId === null) {
         const byeMap: Record<string, { kind: GameKind; result: 0 | 0.5 | 1 }> =
           {
             F: { kind: 'full-bye', result: 1 },
@@ -108,7 +108,8 @@ function extractRoundPairings(raw: string, round: number): [string, string][] {
 
   for (const player of tournament.players) {
     const result = player.results.find((r) => r.round === round);
-    if (!result || result.opponentId === undefined) continue;
+     
+    if (!result || result.opponentId === null) continue;
 
     const key = [String(player.pairingNumber), String(result.opponentId)]
       .toSorted()
@@ -178,7 +179,9 @@ for (let seed = 1; seed <= N; seed++) {
 
     let result;
     try {
-      result = pair(data.players, priorGames);
+      result = pair(data.players, priorGames, {
+        expectedRounds: data.totalRounds,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       process.stdout.write(`seed ${seed} round ${round}: CRASH — ${message}\n`);
