@@ -312,7 +312,7 @@ describe('dutch fixture: issue_7', () => {
     );
   });
 
-  it.fails('produces the exact FIDE-correct pairings for round 15', () => {
+  it('produces the exact FIDE-correct pairings for round 15', () => {
     // Reference output from bbpPairings v6.0.0 (--dutch issue_7.trf -p).
     // Each entry is [white, black] as pairing numbers (strings).
     const expected: [string, string][] = [

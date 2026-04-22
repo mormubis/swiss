@@ -707,6 +707,47 @@ function pair(
   const mc = new MatchingComputer(maxEdgeWeight);
   for (let index = 0; index < np; index++) mc.addVertex();
 
+  // Initialize all edge weights (C++ dutch.cpp lines 835-894).
+  // For even player counts, use computeEdgeWeight with lowerInCurrent=false,
+  // lowerInNext=false. These base weights persist in the MatchingComputer
+  // and influence matchings in brackets where players haven't been explicitly
+  // paired yet.
+  for (let playerIndex = 0; playerIndex < np; playerIndex++) {
+    for (let opponentIndex = 0; opponentIndex < playerIndex; opponentIndex++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const player = pairedSorted[playerIndex]!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const opponent = pairedSorted[opponentIndex]!;
+      if (needsBye) {
+        // Odd player count: use feasibility weights (C++ lines 848-873)
+        const w = buildFeasibilityWeight(
+          opponent,
+          player,
+          pairedSorted[0]?.score ?? 0,
+          playedRounds,
+          expectedRounds,
+          sgp,
+        );
+        mc.setEdgeWeight(playerIndex, opponentIndex, w);
+      } else {
+        // Even player count: use computeEdgeWeight with no bracket context
+        const w = computeEdgeWeight(
+          opponent,
+          player,
+          false,
+          false,
+          0,
+          playedRounds,
+          expectedRounds,
+          sgp,
+          false,
+          unplayedGameRanks,
+        );
+        mc.setEdgeWeight(playerIndex, opponentIndex, w);
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Phase 5: Bracket-by-bracket processing
   // -------------------------------------------------------------------------

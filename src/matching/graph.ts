@@ -429,8 +429,10 @@ class Graph implements GraphLike {
         if (rb0 !== undefined) {
           for (const rb1 of this.rootBlossoms) {
             if (rb1.label !== Label.OUTER || rb1 === rb0) continue;
-            const v0 = rb0.minOuterEdges[rb1.baseVertex.vertexIndex];
-            const v1 = rb1.minOuterEdges[rb0.baseVertex.vertexIndex];
+            const v0: Vertex | undefined =
+              rb0.minOuterEdges[rb1.baseVertex.vertexIndex];
+            const v1: Vertex | undefined =
+              rb1.minOuterEdges[rb0.baseVertex.vertexIndex];
             if (
               v0 !== undefined &&
               v1 !== undefined &&

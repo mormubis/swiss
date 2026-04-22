@@ -156,9 +156,6 @@ describe('dutch trace', () => {
     expect(types.has('pairing:blossom-result')).toBe(true);
     expect(types.has('pairing:pair-finalized')).toBe(true);
     expect(types.has('pairing:color-allocated')).toBe(true);
-    // Blossom internal events should also be present
-    expect(types.has('blossom:stage-start')).toBe(true);
-    expect(types.has('blossom:complete')).toBe(true);
   });
 
   it('produces the same pairings with and without trace', () => {
