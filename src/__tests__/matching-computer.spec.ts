@@ -732,4 +732,47 @@ describe('MatchingComputer', () => {
       );
     });
   });
+
+  describe('repeated setEdgeWeight + computeMatching cycles', () => {
+    it('survives repeated cycles (n=18)', () => {
+      const maxW = DynamicUint.from(0);
+      maxW.or(2);
+      for (let index = 0; index < 15; index++) maxW.shiftGrow(3);
+      for (let index = 0; index < 6; index++) maxW.shiftGrow(6);
+      maxW.shiftGrow(3);
+      maxW.shiftGrow(2);
+      maxW.shiftRight(1);
+      maxW.subtract(1);
+
+      const n = 18;
+      const mc = new MatchingComputer(maxW);
+      for (let index = 0; index < n; index++) mc.addVertex();
+
+      // Initial edges.
+      for (let index = 0; index < n; index++) {
+        for (let index_ = index + 1; index_ < n; index_++) {
+          mc.setEdgeWeight(
+            index,
+            index_,
+            maxW.clone().shiftRight(((index * 7 + index_ * 13) % 10) + 1),
+          );
+        }
+      }
+      mc.computeMatching();
+
+      // Three rounds of modifications + recompute.
+      for (let round = 0; round < 3; round++) {
+        for (let k = 0; k < 100; k++) {
+          const index = ((round + 2) * 7 + k * 3) % n;
+          const index_ = (index + 1 + k) % n;
+          mc.setEdgeWeight(index, index_, maxW.clone().shiftRight((k % 10) + 1));
+        }
+        mc.computeMatching();
+      }
+
+      const matching = mc.getMatching();
+      const matched = matching.filter((m, index) => m !== index && m !== -1).length;
+      expect(matched).toBeGreaterThan(0);
+    });
+  });
 });
