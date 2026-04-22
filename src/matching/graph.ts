@@ -225,23 +225,13 @@ class Graph implements GraphLike {
     let minOuterDualVariableVertex: Vertex | undefined;
 
     for (const rb of this.rootBlossoms) {
-      // Reset labeling state.
+      // Reset labeling state (C++ graph.cpp:188-203).
+      // Do NOT reset minOuterEdgeResistance or minOuterEdges[] here — the C++
+      // preserves these across augmentation calls. They are recomputed per
+      // OUTER blossom in initializeOuterOuterEdges().
+      // Per-vertex minOuterEdge is reset in initializeInnerOuterEdges().
       rb.labeledVertex = undefined;
       rb.labelingVertex = undefined;
-      rb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
-      for (let index = 0; index < rb.minOuterEdges.length; index++) {
-        rb.minOuterEdges[index] = undefined;
-      }
-
-      // Reset vertex minOuterEdge tracking.
-      for (
-        let v: Vertex | undefined = rb.rootChild.vertexListHead;
-        v;
-        v = v.nextVertex
-      ) {
-        v.minOuterEdge = undefined;
-        v.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
-      }
 
       if (rb.baseVertexMatch) {
         rb.label = Label.FREE;
@@ -894,6 +884,11 @@ class Graph implements GraphLike {
   private initializeOuterOuterEdges(): void {
     for (const rb of this.rootBlossoms) {
       if (rb.label !== Label.OUTER) continue;
+      // Reset per-blossom outer-outer tracking (C++ graph.cpp:275).
+      rb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
+      for (let index = 0; index < rb.minOuterEdges.length; index++) {
+        rb.minOuterEdges[index] = undefined;
+      }
       for (const otherRb of this.rootBlossoms) {
         if (otherRb === rb) continue;
         if (otherRb.label !== Label.OUTER) continue;
