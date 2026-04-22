@@ -884,20 +884,21 @@ class Graph implements GraphLike {
       for (const otherRb of this.rootBlossoms) {
         if (otherRb === rb) continue;
         if (otherRb.label !== Label.OUTER) continue;
-        this.updateOuterOuterEdgePair(rb, otherRb);
+        const pairMin = this.aboveMaxEdgeWeight.clone();
+        rb.minOuterEdges[otherRb.baseVertex.vertexIndex] = undefined;
+        this.updateOuterOuterEdges(rb, otherRb, pairMin);
       }
     }
   }
 
-  /**
-   * For a newly OUTER blossom, initialize its outer-outer edges against all
-   * other OUTER blossoms (single-blossom variant, C++ initializeOuterOuterEdges(blossom)).
-   */
   private initializeOuterOuterEdgesForBlossom(newOuterRb: RootBlossom): void {
+    newOuterRb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
+    const pairMin = this.aboveMaxEdgeWeight.clone();
     for (const rb of this.rootBlossoms) {
       if (rb === newOuterRb || rb.label !== Label.OUTER) continue;
-      this.updateOuterOuterEdgePair(newOuterRb, rb);
-      this.updateOuterOuterEdgePair(rb, newOuterRb);
+      pairMin.copyFrom(this.aboveMaxEdgeWeight);
+      newOuterRb.minOuterEdges[rb.baseVertex.vertexIndex] = undefined;
+      this.updateOuterOuterEdges(newOuterRb, rb, pairMin);
     }
   }
 
@@ -935,27 +936,35 @@ class Graph implements GraphLike {
    * the current best for rb1, update rb1.minOuterEdges[v2.vertexIndex] and
    * rb1.minOuterEdgeResistance.
    */
-  private updateOuterOuterEdgePair(rb1: RootBlossom, rb2: RootBlossom): void {
+  private updateOuterOuterEdges(
+    rb0: RootBlossom,
+    rb1: RootBlossom,
+    pairMinResistance: DynamicUint,
+  ): void {
+    const actualRb0 = rb0.rootChild.rootBlossom!;
+    const actualRb1 = rb1.rootChild.rootBlossom!;
     const rs = this.resistanceStorage;
     for (
-      let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
-      v1;
-      v1 = v1.nextVertex
+      let v0: Vertex | undefined = rb0.rootChild.vertexListHead;
+      v0;
+      v0 = v0.nextVertex
     ) {
       for (
-        let v2: Vertex | undefined = rb2.rootChild.vertexListHead;
-        v2;
-        v2 = v2.nextVertex
+        let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
+        v1;
+        v1 = v1.nextVertex
       ) {
-        if (v1.vertexIndex === v2.vertexIndex) continue;
-        resistanceInto(rs, v1, v2);
-        if (
-          rb1.minOuterEdgeResistance.lt(this.aboveMaxEdgeWeight)
-            ? rs.lt(rb1.minOuterEdgeResistance)
-            : true
-        ) {
-          rb1.minOuterEdgeResistance.copyFrom(rs);
-          rb1.minOuterEdges[v2.vertexIndex] = v1;
+        resistanceInto(rs, v0, v1);
+        if (rs.lt(pairMinResistance)) {
+          pairMinResistance.copyFrom(rs);
+          actualRb0.minOuterEdges[actualRb1.baseVertex.vertexIndex] = v0;
+          actualRb1.minOuterEdges[actualRb0.baseVertex.vertexIndex] = v1;
+          if (rs.lt(actualRb0.minOuterEdgeResistance)) {
+            actualRb0.minOuterEdgeResistance.copyFrom(rs);
+          }
+          if (rs.lt(actualRb1.minOuterEdgeResistance)) {
+            actualRb1.minOuterEdgeResistance.copyFrom(rs);
+          }
         }
       }
     }
@@ -997,125 +1006,80 @@ class Graph implements GraphLike {
   private formBlossomFromPath(path: Vertex[]): void {
     if (path.length < 2) return;
 
-    // Collect ALL unique RootBlossoms referenced by path vertices.
-    // The C++ initializeFromChildren destroys all of them.
-    const oldRbs: RootBlossom[] = [];
-    const seenRbs = new Set<RootBlossom>();
-    for (const v of path) {
-      const rb = v.rootBlossom!;
-      if (!seenRbs.has(rb)) {
-        seenRbs.add(rb);
-        oldRbs.push(rb);
-      }
+    const originalBlossoms: RootBlossom[] = [];
+    for (let index = 0; index < path.length; index += 2) {
+      originalBlossoms.push(path[index]!.rootBlossom!);
     }
-    // The base rootBlossom (carries label, base vertex, match info).
-    const oldRb = path[0]!.rootBlossom!;
-
-    // The path alternates between child-blossom boundary vertices.
-    // path[0], path[1] = first pair: path[0] is inside child A (exit vertex),
-    //                                path[1] is inside child B (entry vertex).
-    // path[2], path[3] = next pair, etc.
-    //
-    // The first child (ancestor of path[0] under undefined) becomes previousChild.
-    // The last child is the ancestor of path[path.length-1] under undefined.
-    // vertex list: head from last child's head, tail from first child's tail
-    // (C++ parentblossomimpl.h:28-31).
+    const baseRoot = path[0]!.rootBlossom!;
 
     const firstChild: Blossom = getAncestorOfVertex(path[0]!);
-    // C++ parentblossomimpl.h:30 uses std::prev(end, 2) — the second-to-last
-    // path element's ancestor. This differs from lastChild (path.at(-1)) when
-    // the path wraps (firstChild === lastChild).
     const headChild: Blossom = getAncestorOfVertex(path.at(-2)!);
 
-    // Create the new zero dual variable.
     const newDual = this.aboveMaxEdgeWeight.clone().and(0);
-
-    // Create the ParentBlossom.
-    // vertexListHead = headChild's vertexListHead (C++ parentblossomimpl.h:30)
-    // vertexListTail = firstChild's vertexListTail (C++ parentblossomimpl.h:31)
     const newParent = new ParentBlossom(
       newDual,
-      oldRb,
+      baseRoot,
       firstChild,
       headChild.vertexListHead,
       firstChild.vertexListTail,
     );
 
-    // Collect child blossoms from the path BEFORE connectChildren modifies
-    // parentBlossom pointers (C++ getRootBlossomsFromPath, rootblossomimpl.h:27-38).
-    // Step by 2 — each even index identifies a child blossom.
-    const children: Blossom[] = [];
-    for (let index = 0; index < path.length; index += 2) {
-      children.push(getAncestorOfVertex(path[index]!));
-    }
-
-    // connectChildren sets up the sibling linked list starting from firstChild.
-    // After this call, newParent.subblossom points to the last child.
-    // All children except the first get parentBlossom = newParent.
     newParent.connectChildren(path);
-
-    // The first child also needs parentBlossom = newParent.
     firstChild.parentBlossom = newParent;
 
-    // connectChildren already creates the circular sibling chain (the last
-    // child's nextBlossom is set to the first child when the path wraps).
-    // Only close manually when the last child differs from the first —
-    // otherwise we overwrite connectChildren's link and create a self-loop.
-    const lastChild2 = newParent.subblossom;
-    if (lastChild2 !== firstChild) {
-      lastChild2.nextBlossom = firstChild;
-      firstChild.previousBlossom = lastChild2;
+    const lastChild = newParent.subblossom;
+    if (lastChild !== firstChild) {
+      lastChild.nextBlossom = firstChild;
+      firstChild.previousBlossom = lastChild;
     }
-
-    // Link vertex lists in reverse order (C++ rootblossom.cpp:166-174):
-    //   lastChild.tail → secondToLast.head → ... → firstChild.head
-    // matching parentblossomimpl.h:28-31 which sets:
-    //   vertexListHead = lastChild.vertexListHead
-    //   vertexListTail = firstChild.vertexListTail
-    for (let index = children.length - 1; index > 0; index--) {
-      children[index]!.vertexListTail.nextVertex =
-        children[index - 1]!.vertexListHead;
-    }
-    // Terminate the list at firstChild's tail.
-    firstChild.vertexListTail.nextVertex = undefined;
 
     this.parentBlossoms.push(newParent);
 
-    // Create the new RootBlossom wrapping newParent.
     const newRb = new RootBlossom(
       newParent,
-      oldRb.baseVertex,
-      oldRb.baseVertexMatch,
+      baseRoot.baseVertex,
+      baseRoot.baseVertexMatch,
       this,
     );
-    newRb.label = Label.OUTER;
-    newRb.labeledVertex = undefined;
-    newRb.labelingVertex = undefined;
+    newRb.label = baseRoot.label;
+    newRb.labelingVertex = baseRoot.labelingVertex;
+    newRb.labeledVertex = baseRoot.labeledVertex;
 
-    // Set up minOuterEdges array.
     while (newRb.minOuterEdges.length < this.vertices.length) {
       newRb.minOuterEdges.push(undefined);
     }
+    for (let index = 0; index < baseRoot.minOuterEdges.length; index++) {
+      newRb.minOuterEdges[index] = baseRoot.minOuterEdges[index];
+    }
 
-    // Set newParent's parentBlossom to undefined (directly under RootBlossom).
+    newRb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
     newParent.parentBlossom = undefined;
 
-    // Update rootBlossom pointers for all descendants.
+    // Link vertex lists (C++ forward order).
+    let previousHead: Vertex | undefined;
+    for (const rb of originalBlossoms) {
+      if (rb.label !== Label.OUTER) {
+        this.updateInnerOuterEdges(rb);
+      }
+      rb.rootChild.vertexListTail.nextVertex = previousHead;
+      previousHead = rb.rootChild.vertexListHead;
+    }
+    if (previousHead) {
+      newParent.vertexListHead = previousHead;
+    }
+
     newRb.updateRootBlossomInDescendants();
 
-    // Remove ALL old RootBlossoms from the list.
-    for (const rb of oldRbs) {
+    for (const rb of originalBlossoms) {
       const index = this.rootBlossoms.indexOf(rb);
       if (index !== -1) this.rootBlossoms.splice(index, 1);
     }
 
-    // Add new RootBlossom.
     this.rootBlossoms.push(newRb);
     this.rootBlossomMinOuterEdgeResistances.push(
       this.aboveMaxEdgeWeight.clone(),
     );
 
-    // Initialize outer-outer edges for the new blossom.
     this.initializeOuterOuterEdgesForBlossom(newRb);
     this.updateInnerOuterEdges(newRb);
   }

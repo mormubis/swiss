@@ -325,20 +325,24 @@ class RootBlossom {
 
   /**
    * Update the rootBlossom pointer on all descendant vertices and
-   * ParentBlossoms to point to this RootBlossom.
+   * ParentBlossoms to point to `target` (or `this` if omitted).
    *
-   * Ported from bbpPairings `rootblossomimpl.h:176-195`.
+   * The C++ version always takes a target parameter. Existing callers that
+   * pass no argument get the old behavior (defaults to `this`).
+   *
+   * Ported from bbpPairings `rootblossomimpl.h:174-193`.
    */
-  updateRootBlossomInDescendants(): void {
+  updateRootBlossomInDescendants(target?: RootBlossom): void {
+    const rb = target ?? this;
     for (
       let v: Vertex | undefined = this.rootChild.vertexListHead;
       v;
       v = v.nextVertex
     ) {
-      v.rootBlossom = this;
+      v.rootBlossom = rb;
       let pb: ParentBlossom | undefined = v.parentBlossom;
       while (pb && pb.vertexListTail === v) {
-        pb.rootBlossom = this;
+        pb.rootBlossom = rb;
         pb = pb.parentBlossom;
       }
     }
