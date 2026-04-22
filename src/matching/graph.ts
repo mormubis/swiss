@@ -862,31 +862,26 @@ class Graph implements GraphLike {
    * For each non-OUTER blossom vertex, find cheapest edge to any OUTER vertex.
    */
   private initializeInnerOuterEdges(): void {
+    // Pre-collect outer vertices into flat array (C++ graph.cpp:240-248).
+    // Avoids re-scanning rootBlossoms × vertex lists for every inner vertex.
+    const outerVertices: Vertex[] = [];
+    for (const v of this.vertices) {
+      if (v.rootBlossom!.label === Label.OUTER) {
+        outerVertices.push(v);
+      }
+    }
+
     const rs = this.resistanceStorage;
-    for (const rb of this.rootBlossoms) {
-      if (rb.label === Label.OUTER) continue;
-      for (
-        let v: Vertex | undefined = rb.rootChild.vertexListHead;
-        v;
-        v = v.nextVertex
-      ) {
-        for (const outerRb of this.rootBlossoms) {
-          if (outerRb.label !== Label.OUTER) continue;
-          for (
-            let outerV: Vertex | undefined = outerRb.rootChild.vertexListHead;
-            outerV;
-            outerV = outerV.nextVertex
-          ) {
-            if (v.vertexIndex === outerV.vertexIndex) continue;
-            resistanceInto(rs, v, outerV);
-            if (
-              v.minOuterEdge === undefined ||
-              rs.lt(v.minOuterEdgeResistance)
-            ) {
-              v.minOuterEdge = outerV;
-              v.minOuterEdgeResistance.copyFrom(rs);
-            }
-          }
+    for (const v of this.vertices) {
+      if (v.rootBlossom!.label === Label.OUTER) continue;
+      v.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
+      v.minOuterEdge = undefined;
+      for (const outerV of outerVertices) {
+        if (v.vertexIndex === outerV.vertexIndex) continue;
+        resistanceInto(rs, v, outerV);
+        if (rs.lt(v.minOuterEdgeResistance)) {
+          v.minOuterEdge = outerV;
+          v.minOuterEdgeResistance.copyFrom(rs);
         }
       }
     }
@@ -927,24 +922,21 @@ class Graph implements GraphLike {
    */
   private updateInnerOuterEdges(newOuterRb: RootBlossom): void {
     const rs = this.resistanceStorage;
-    for (const rb of this.rootBlossoms) {
-      if (rb === newOuterRb || rb.label === Label.OUTER) continue;
+    for (const innerVertex of this.vertices) {
+      if (innerVertex.rootBlossom!.label === Label.OUTER) continue;
       for (
-        let v: Vertex | undefined = rb.rootChild.vertexListHead;
-        v;
-        v = v.nextVertex
+        let outerV: Vertex | undefined = newOuterRb.rootChild.vertexListHead;
+        outerV;
+        outerV = outerV.nextVertex
       ) {
-        for (
-          let outerV: Vertex | undefined = newOuterRb.rootChild.vertexListHead;
-          outerV;
-          outerV = outerV.nextVertex
+        if (innerVertex.vertexIndex === outerV.vertexIndex) continue;
+        resistanceInto(rs, innerVertex, outerV);
+        if (
+          innerVertex.minOuterEdge === undefined ||
+          rs.lt(innerVertex.minOuterEdgeResistance)
         ) {
-          if (v.vertexIndex === outerV.vertexIndex) continue;
-          resistanceInto(rs, v, outerV);
-          if (v.minOuterEdge === undefined || rs.lt(v.minOuterEdgeResistance)) {
-            v.minOuterEdge = outerV;
-            v.minOuterEdgeResistance.copyFrom(rs);
-          }
+          innerVertex.minOuterEdge = outerV;
+          innerVertex.minOuterEdgeResistance.copyFrom(rs);
         }
       }
     }
