@@ -485,7 +485,6 @@ class Graph implements GraphLike {
         const pathBack: Vertex[] = [vertex1];
 
         // Expand front toward its exposed root.
-        // Expand front toward its exposed root.
         while (pathFront[0]!.rootBlossom!.baseVertexMatch) {
           const front = pathFront[0]!;
           pathFront.unshift(front.rootBlossom!.baseVertex);
@@ -1023,21 +1022,32 @@ class Graph implements GraphLike {
     // (C++ parentblossomimpl.h:28-31).
 
     const firstChild: Blossom = getAncestorOfVertex(path[0]!);
-    const lastChild: Blossom = getAncestorOfVertex(path.at(-1)!);
+    // C++ parentblossomimpl.h:30 uses std::prev(end, 2) — the second-to-last
+    // path element's ancestor. This differs from lastChild (path.at(-1)) when
+    // the path wraps (firstChild === lastChild).
+    const headChild: Blossom = getAncestorOfVertex(path.at(-2)!);
 
     // Create the new zero dual variable.
     const newDual = this.aboveMaxEdgeWeight.clone().and(0);
 
     // Create the ParentBlossom.
-    // vertexListHead = last child's vertexListHead (C++ prepends in reverse)
-    // vertexListTail = first child's vertexListTail
+    // vertexListHead = headChild's vertexListHead (C++ parentblossomimpl.h:30)
+    // vertexListTail = firstChild's vertexListTail (C++ parentblossomimpl.h:31)
     const newParent = new ParentBlossom(
       newDual,
       oldRb,
       firstChild,
-      lastChild.vertexListHead,
+      headChild.vertexListHead,
       firstChild.vertexListTail,
     );
+
+    // Collect child blossoms from the path BEFORE connectChildren modifies
+    // parentBlossom pointers (C++ getRootBlossomsFromPath, rootblossomimpl.h:27-38).
+    // Step by 2 — each even index identifies a child blossom.
+    const children: Blossom[] = [];
+    for (let index = 0; index < path.length; index += 2) {
+      children.push(getAncestorOfVertex(path[index]!));
+    }
 
     // connectChildren sets up the sibling linked list starting from firstChild.
     // After this call, newParent.subblossom points to the last child.
@@ -1055,15 +1065,6 @@ class Graph implements GraphLike {
     if (lastChild2 !== firstChild) {
       lastChild2.nextBlossom = firstChild;
       firstChild.previousBlossom = lastChild2;
-    }
-
-    // Collect child blossoms from the path (C++ getRootBlossomsFromPath,
-    // rootblossomimpl.h:27-38). Step by 2 through the path — each even
-    // index identifies a child blossom. This avoids traversing the circular
-    // sibling list which may have the same blossom at start and end.
-    const children: Blossom[] = [];
-    for (let index = 0; index < path.length; index += 2) {
-      children.push(getAncestorOfVertex(path[index]!));
     }
 
     // Link vertex lists in reverse order (C++ rootblossom.cpp:166-174):
