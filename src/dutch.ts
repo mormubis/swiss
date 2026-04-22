@@ -21,12 +21,7 @@
 import { maxWeightMatching } from './blossom.js';
 import { DynamicUint } from './dynamic-uint.js';
 import { MatchingComputer } from './matching-computer.js';
-import {
-  allocateColor,
-  assignBye,
-  buildPlayerStates,
-  scoreGroups,
-} from './utilities.js';
+import { allocateColor, buildPlayerStates, scoreGroups } from './utilities.js';
 
 import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
@@ -100,12 +95,6 @@ const DUTCH_COLOR_RULES: ColorRule[] = [
 
 function dutchRankCompare(a: PlayerState, b: PlayerState): number {
   return a.tpn - b.tpn;
-}
-
-function dutchByeTiebreak(a: PlayerState, b: PlayerState): number {
-  if (a.unplayedRounds !== b.unplayedRounds)
-    return a.unplayedRounds - b.unplayedRounds;
-  return b.tpn - a.tpn;
 }
 
 // ---------------------------------------------------------------------------
@@ -652,31 +641,15 @@ function pair(
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Phase 2: Bye assignee
-  // -------------------------------------------------------------------------
-  let byeState: PlayerState | undefined;
-  if (needsBye) {
-    byeState = assignBye(sorted, games, dutchByeTiebreak);
-  }
-  const byeId = byeState?.id;
-  if (trace && byeId !== undefined) {
-    trace({
-      playerId: byeId,
-      reason: 'lowest-score-no-prior-bye',
-      system: 'dutch',
-      type: 'pairing:bye-assigned',
-    });
-  }
-  const pairedSorted =
-    byeId === undefined ? sorted : sorted.filter((s) => s.id !== byeId);
+  // C++ does NOT pre-assign the bye. Instead, all players (including the bye
+  // candidate) stay in the MatchingComputer. The `isByeCandidate` bits in
+  // edge weights bias the blossom toward leaving the correct player unmatched.
+  // The unmatched player after the bracket loop becomes the bye recipient.
+  const pairedSorted = sorted;
   const np = pairedSorted.length;
 
   if (np < 2) {
-    return {
-      byes: byeId === undefined ? [] : [{ player: byeId }],
-      pairings: [],
-    };
+    return { byes: [], pairings: [] };
   }
 
   // -------------------------------------------------------------------------
@@ -1778,8 +1751,33 @@ function pair(
   }
 
   // -------------------------------------------------------------------------
-  // Phase 7: Extract pairings from matchedPairs
+  // Phase 7: Extract pairings + bye from matchedPairs
   // -------------------------------------------------------------------------
+  const pairedGlobals = new Set<number>();
+  for (const [globalA, globalB] of matchedPairs) {
+    pairedGlobals.add(globalA);
+    pairedGlobals.add(globalB);
+  }
+
+  // The bye recipient is the unmatched player (odd count only)
+  let byeId: string | undefined;
+  if (needsBye) {
+    for (let index = 0; index < np; index++) {
+      if (!pairedGlobals.has(index)) {
+        byeId = pairedSorted[index]?.id;
+        break;
+      }
+    }
+    if (trace && byeId !== undefined) {
+      trace({
+        playerId: byeId,
+        reason: 'blossom-unmatched',
+        system: 'dutch',
+        type: 'pairing:bye-assigned',
+      });
+    }
+  }
+
   const result: [PlayerState, PlayerState][] = [];
   for (const [globalA, globalB] of matchedPairs) {
     const a = pairedSorted[globalA];

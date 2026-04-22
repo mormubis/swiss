@@ -17,7 +17,7 @@
     "strict": true,
     "target": "ESNext"
   },
-  "include": ["src/**/*", "scripts/**/*"],
+  "include": ["src/**/*"],
   "typedocOptions": {
     "entryPoints": ["src/index.ts"],
     "excludeInternal": false,
