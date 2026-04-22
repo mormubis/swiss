@@ -28,9 +28,8 @@ import type { Blossom, GraphLike } from './blossom.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Compute resistance into a pre-allocated DynamicUint (zero allocation).
+ * Compute resistance into pre-allocated DynamicUint (zero allocation).
  * resistance(u, v) = u.dual + v.dual - w(u, v)
- * C++ equivalent: vertex.resistance(result, other)
  */
 function resistanceInto(out: DynamicUint, u: Vertex, v: Vertex): void {
   out.copyFrom(u.dualVariable);
@@ -96,7 +95,7 @@ class Graph implements GraphLike {
   /** All active RootBlossoms. Implements GraphLike.rootBlossoms. */
   rootBlossoms: RootBlossom[] = [];
 
-  /** Pre-allocated scratch for resistance calculations (zero-alloc hot path). */
+  /** Pre-allocated scratch for resistance calculations. */
   private readonly resistanceStorage: DynamicUint;
 
   constructor(maxEdgeWeight: DynamicUint) {
@@ -863,24 +862,31 @@ class Graph implements GraphLike {
    * For each non-OUTER blossom vertex, find cheapest edge to any OUTER vertex.
    */
   private initializeInnerOuterEdges(): void {
-    // Pre-collect outer vertices (C++ graph.cpp:240-248).
-    const outerVertices: Vertex[] = [];
-    for (const v of this.vertices) {
-      if (v.rootBlossom!.label === Label.OUTER) {
-        outerVertices.push(v);
-      }
-    }
-
     const rs = this.resistanceStorage;
-    for (const v of this.vertices) {
-      if (v.rootBlossom!.label === Label.OUTER) continue;
-      v.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
-      v.minOuterEdge = undefined;
-      for (const outerV of outerVertices) {
-        resistanceInto(rs, outerV, v);
-        if (rs.lt(v.minOuterEdgeResistance)) {
-          v.minOuterEdgeResistance.copyFrom(rs);
-          v.minOuterEdge = outerV;
+    for (const rb of this.rootBlossoms) {
+      if (rb.label === Label.OUTER) continue;
+      for (
+        let v: Vertex | undefined = rb.rootChild.vertexListHead;
+        v;
+        v = v.nextVertex
+      ) {
+        for (const outerRb of this.rootBlossoms) {
+          if (outerRb.label !== Label.OUTER) continue;
+          for (
+            let outerV: Vertex | undefined = outerRb.rootChild.vertexListHead;
+            outerV;
+            outerV = outerV.nextVertex
+          ) {
+            if (v.vertexIndex === outerV.vertexIndex) continue;
+            resistanceInto(rs, v, outerV);
+            if (
+              v.minOuterEdge === undefined ||
+              rs.lt(v.minOuterEdgeResistance)
+            ) {
+              v.minOuterEdge = outerV;
+              v.minOuterEdgeResistance.copyFrom(rs);
+            }
+          }
         }
       }
     }
@@ -893,10 +899,9 @@ class Graph implements GraphLike {
   private initializeOuterOuterEdges(): void {
     for (const rb of this.rootBlossoms) {
       if (rb.label !== Label.OUTER) continue;
-      rb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
       for (const otherRb of this.rootBlossoms) {
-        if (otherRb === rb || otherRb.label !== Label.OUTER) continue;
-        rb.minOuterEdges[otherRb.baseVertex.vertexIndex] = undefined;
+        if (otherRb === rb) continue;
+        if (otherRb.label !== Label.OUTER) continue;
         this.updateOuterOuterEdgePair(rb, otherRb);
       }
     }
@@ -907,11 +912,10 @@ class Graph implements GraphLike {
    * other OUTER blossoms (single-blossom variant, C++ initializeOuterOuterEdges(blossom)).
    */
   private initializeOuterOuterEdgesForBlossom(newOuterRb: RootBlossom): void {
-    newOuterRb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
     for (const rb of this.rootBlossoms) {
       if (rb === newOuterRb || rb.label !== Label.OUTER) continue;
-      newOuterRb.minOuterEdges[rb.baseVertex.vertexIndex] = undefined;
       this.updateOuterOuterEdgePair(newOuterRb, rb);
+      this.updateOuterOuterEdgePair(rb, newOuterRb);
     }
   }
 
@@ -923,17 +927,24 @@ class Graph implements GraphLike {
    */
   private updateInnerOuterEdges(newOuterRb: RootBlossom): void {
     const rs = this.resistanceStorage;
-    for (const innerVertex of this.vertices) {
-      if (innerVertex.rootBlossom!.label === Label.OUTER) continue;
+    for (const rb of this.rootBlossoms) {
+      if (rb === newOuterRb || rb.label === Label.OUTER) continue;
       for (
-        let outerV: Vertex | undefined = newOuterRb.rootChild.vertexListHead;
-        outerV;
-        outerV = outerV.nextVertex
+        let v: Vertex | undefined = rb.rootChild.vertexListHead;
+        v;
+        v = v.nextVertex
       ) {
-        resistanceInto(rs, outerV, innerVertex);
-        if (rs.lt(innerVertex.minOuterEdgeResistance)) {
-          innerVertex.minOuterEdgeResistance.copyFrom(rs);
-          innerVertex.minOuterEdge = outerV;
+        for (
+          let outerV: Vertex | undefined = newOuterRb.rootChild.vertexListHead;
+          outerV;
+          outerV = outerV.nextVertex
+        ) {
+          if (v.vertexIndex === outerV.vertexIndex) continue;
+          resistanceInto(rs, v, outerV);
+          if (v.minOuterEdge === undefined || rs.lt(v.minOuterEdgeResistance)) {
+            v.minOuterEdge = outerV;
+            v.minOuterEdgeResistance.copyFrom(rs);
+          }
         }
       }
     }
@@ -946,13 +957,7 @@ class Graph implements GraphLike {
    * rb1.minOuterEdgeResistance.
    */
   private updateOuterOuterEdgePair(rb1: RootBlossom, rb2: RootBlossom): void {
-    // Get actual rootBlossoms (C++ graph.cpp:123-126).
-    const actual1 = rb1.rootChild.rootBlossom!;
-    const actual2 = rb2.rootChild.rootBlossom!;
-
     const rs = this.resistanceStorage;
-    const minResistance = this.aboveMaxEdgeWeight.clone();
-
     for (
       let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
       v1;
@@ -963,18 +968,15 @@ class Graph implements GraphLike {
         v2;
         v2 = v2.nextVertex
       ) {
+        if (v1.vertexIndex === v2.vertexIndex) continue;
         resistanceInto(rs, v1, v2);
-        if (rs.lt(minResistance)) {
-          minResistance.copyFrom(rs);
-          // Index by the OTHER blossom's base vertex (C++ graph.cpp:150-155).
-          actual1.minOuterEdges[actual2.baseVertex.vertexIndex] = v1;
-          actual2.minOuterEdges[actual1.baseVertex.vertexIndex] = v2;
-          if (minResistance.lt(actual1.minOuterEdgeResistance)) {
-            actual1.minOuterEdgeResistance.copyFrom(minResistance);
-          }
-          if (minResistance.lt(actual2.minOuterEdgeResistance)) {
-            actual2.minOuterEdgeResistance.copyFrom(minResistance);
-          }
+        if (
+          rb1.minOuterEdgeResistance.lt(this.aboveMaxEdgeWeight)
+            ? rs.lt(rb1.minOuterEdgeResistance)
+            : true
+        ) {
+          rb1.minOuterEdgeResistance.copyFrom(rs);
+          rb1.minOuterEdges[v2.vertexIndex] = v1;
         }
       }
     }
