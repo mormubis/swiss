@@ -664,27 +664,15 @@ class Graph implements GraphLike {
         );
 
         // Determine if the path from rootChild to connectChild goes forward
-        // (i.e., via nextBlossom links). Walk forward from rootChild;
-        // if we reach connectChild, connectForward=true; otherwise false.
-        //
-        // TODO(issue_15): the C++ uses a parity-flip pattern here
-        //   (connectForward starts true, flips per step). Our code always
-        //   returns true for circular lists. Fixing this to match C++ breaks
-        //   n=18 test — other parts of Case 5 may also need fixing.
-        let connectForward: boolean;
-        {
-          let found = false;
-          for (
-            let current: Blossom | undefined = rootChild.nextBlossom;
-            current !== rootChild && current !== undefined;
-            current = current.nextBlossom
-          ) {
-            if (current === connectChild) {
-              found = true;
-              break;
-            }
-          }
-          connectForward = rootChild === connectChild || found;
+        // (i.e., via nextBlossom links). C++ parity-flip pattern: count
+        // steps from rootChild to connectChild; even distance = forward.
+        let connectForward = true;
+        for (
+          let current: Blossom | undefined = rootChild;
+          current !== connectChild;
+          current = current!.nextBlossom
+        ) {
+          connectForward = !connectForward;
         }
 
         // Walk the circular child list, assigning labels.
@@ -770,9 +758,6 @@ class Graph implements GraphLike {
           newRb.label = label;
           newRb.labelingVertex = newLabelingVertex;
           newRb.labeledVertex = newLabeledVertex;
-
-          // Disconnect child from the old ParentBlossom.
-          currentChild.parentBlossom = undefined;
 
           // Update rootBlossom pointer for all vertices and nested ParentBlossoms.
           newRb.updateRootBlossomInDescendants();
@@ -1063,7 +1048,6 @@ class Graph implements GraphLike {
     }
 
     newRb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
-    newParent.parentBlossom = undefined;
 
     // Link vertex lists (C++ forward order).
     let previousHead: Vertex | undefined;

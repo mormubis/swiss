@@ -231,6 +231,10 @@ class RootBlossom {
     this.minOuterEdgeResistance = graph.aboveMaxEdgeWeight.clone();
     this.minOuterEdges = [];
     this.rootChild = rootChild;
+
+    // C++ rootblossomimpl.h:127-129
+    rootChild.parentBlossom = undefined;
+    rootChild.vertexListTail.nextVertex = undefined;
   }
 
   // ---------------------------------------------------------------------------
