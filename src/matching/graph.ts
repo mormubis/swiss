@@ -484,68 +484,56 @@ class Graph implements GraphLike {
           return false;
         }
 
-        const rbA = vertex0.rootBlossom!;
-        const rbB = vertex1.rootBlossom!;
+        // Build path using the C++ deque pattern (graph.cpp:573-589).
+        // Each push_front/push_back uses the CURRENT front/back vertex,
+        // which changes after every push.
+        //
+        // We use two arrays: pathFront grows leftward (unshift), pathBack
+        // grows rightward (push). The final path is [...pathFront, ...pathBack].
+        const pathFront: Vertex[] = [vertex0];
+        const pathBack: Vertex[] = [vertex1];
 
-        if (rbA === rbB) {
+        // Expand front toward its exposed root.
+        while (pathFront[0]!.rootBlossom!.baseVertexMatch) {
+          const front = pathFront[0]!;
+          pathFront.unshift(front.rootBlossom!.baseVertex);
+          pathFront.unshift(pathFront[0]!.rootBlossom!.baseVertexMatch!);
+          pathFront.unshift(pathFront[0]!.rootBlossom!.labeledVertex!);
+          pathFront.unshift(pathFront[0]!.rootBlossom!.labelingVertex!);
+        }
+
+        // Expand back toward its exposed root.
+        while (pathBack.at(-1)!.rootBlossom!.baseVertexMatch) {
+          const b0 = pathBack.at(-1)!.rootBlossom!.baseVertex;
+          const b1 = b0.rootBlossom!.baseVertexMatch!;
+          const b2 = b1.rootBlossom!.labeledVertex!;
+          const b3 = b2.rootBlossom!.labelingVertex!;
+          pathBack.push(b0, b1, b2, b3);
+        }
+
+        // Same-root check: compare the exposed roots at the path endpoints.
+        // (C++ line 591: path.front()->rootBlossom == path.back()->rootBlossom)
+        if (pathFront[0]!.rootBlossom === pathBack.at(-1)!.rootBlossom) {
           // SAME ROOT → form new blossom.
-          // Build path from vertex0 and vertex1 back to the exposed root,
-          // following the alternating tree structure.
-          // C++ path format: [vertex0, ..., vertex1] with alternating
-          // labelingVertex→labeledVertex→baseVertex→baseVertexMatch links.
 
-          // Build path from vertex0 toward root.
-          const pathFront: Vertex[] = [vertex0];
-          {
-            let current: Vertex = vertex0;
-            while (current.rootBlossom!.baseVertexMatch) {
-              const rb = current.rootBlossom!;
-              pathFront.push(
-                rb.baseVertex,
-                rb.baseVertexMatch!,
-                rb.baseVertexMatch!.rootBlossom!.labeledVertex!,
-                rb.baseVertexMatch!.rootBlossom!.labelingVertex!,
-              );
-              current = rb.baseVertexMatch!.rootBlossom!.labelingVertex!;
-            }
-          }
-
-          // Build path from vertex1 toward root.
-          const pathBack: Vertex[] = [vertex1];
-          {
-            let current: Vertex = vertex1;
-            while (current.rootBlossom!.baseVertexMatch) {
-              const rb = current.rootBlossom!;
-              pathBack.push(
-                rb.baseVertex,
-                rb.baseVertexMatch!,
-                rb.baseVertexMatch!.rootBlossom!.labeledVertex!,
-                rb.baseVertexMatch!.rootBlossom!.labelingVertex!,
-              );
-              current = rb.baseVertexMatch!.rootBlossom!.labelingVertex!;
-            }
-          }
-
-          // Trim shared prefix from the back of both paths.
-          // (C++ trims while next element of each sub-path is in same rootBlossom)
+          // Trim shared prefix (C++ lines 594-606).
+          // While the second element from each end shares a rootBlossom,
+          // remove 4 from each end.
           while (
             pathFront.length >= 2 &&
             pathBack.length >= 2 &&
-            pathFront[1]!.rootBlossom === pathBack[1]!.rootBlossom
+            pathFront[1]!.rootBlossom === pathBack.at(-2)!.rootBlossom
           ) {
             pathFront.splice(0, 4);
-            pathBack.splice(0, 4);
+            pathBack.splice(-4, 4);
           }
 
-          // The combined path is: pathFront (front to back) + pathBack reversed.
-          const path: Vertex[] = [...pathFront, ...pathBack.toReversed()];
+          const path: Vertex[] = [...pathFront, ...pathBack];
 
           // Form a new blossom from this path.
           this.formBlossomFromPath(path);
 
           // After forming a new blossom, re-update tracking variables.
-          // The newly formed blossom's rootBlossom is OUTER; update minima.
-          // Find the new blossom (it will be the rootBlossom of path[0]).
           const newRb = path[0]!.rootBlossom!;
 
           // Update minOuterDualVariable for vertices in new blossom.
@@ -1020,7 +1008,18 @@ class Graph implements GraphLike {
   private formBlossomFromPath(path: Vertex[]): void {
     if (path.length < 2) return;
 
-    // All vertices in the path share the same RootBlossom (same-root case).
+    // Collect ALL unique RootBlossoms referenced by path vertices.
+    // The C++ initializeFromChildren destroys all of them.
+    const oldRbs: RootBlossom[] = [];
+    const seenRbs = new Set<RootBlossom>();
+    for (const v of path) {
+      const rb = v.rootBlossom!;
+      if (!seenRbs.has(rb)) {
+        seenRbs.add(rb);
+        oldRbs.push(rb);
+      }
+    }
+    // The base rootBlossom (carries label, base vertex, match info).
     const oldRb = path[0]!.rootBlossom!;
 
     // The path alternates between child-blossom boundary vertices.
@@ -1115,9 +1114,11 @@ class Graph implements GraphLike {
     // Update rootBlossom pointers for all descendants.
     newRb.updateRootBlossomInDescendants();
 
-    // Remove old RootBlossom from the list.
-    const oldRbIndex = this.rootBlossoms.indexOf(oldRb);
-    if (oldRbIndex !== -1) this.rootBlossoms.splice(oldRbIndex, 1);
+    // Remove ALL old RootBlossoms from the list.
+    for (const rb of oldRbs) {
+      const index = this.rootBlossoms.indexOf(rb);
+      if (index !== -1) this.rootBlossoms.splice(index, 1);
+    }
 
     // Add new RootBlossom.
     this.rootBlossoms.push(newRb);
@@ -1127,8 +1128,6 @@ class Graph implements GraphLike {
 
     // Initialize outer-outer edges for the new blossom.
     this.initializeOuterOuterEdgesForBlossom(newRb);
-
-    // Update inner-outer edges (non-OUTER vertices now have a new OUTER blossom to check).
     this.updateInnerOuterEdges(newRb);
   }
 }
