@@ -46,6 +46,8 @@ pnpm run build          # bundle TypeScript → dist/ via tsdown
 pnpm run test                          # run all tests once
 pnpm run test:watch                    # watch mode
 pnpm run test:coverage                 # with coverage report
+pnpm run test:fide                     # RTG comparison vs bbpPairings (50 tournaments)
+pnpm run test:fide 200                 # RTG comparison with custom count
 
 # Run a single test file
 pnpm run test src/__tests__/index.spec.ts
@@ -53,6 +55,11 @@ pnpm run test src/__tests__/index.spec.ts
 # Run a single test by name (substring match)
 pnpm run test -- --reporter=verbose -t "dutch"
 ```
+
+> **Note:** `test:fide` requires bbpPairings built at
+> `/tmp/bbpPairings/build/bbpPairings.exe`. It generates random tournaments with
+> bbpPairings' RTG, then compares our round-by-round pairings against what
+> bbpPairings produced.
 
 ### Lint & Format
 

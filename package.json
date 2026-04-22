@@ -103,6 +103,7 @@
     "prepare": "husky && pnpm run build",
     "test": "vitest run",
     "test:coverage": "pnpm run test --coverage",
+    "test:fide": "tsx scripts/rtg-compare.mts",
     "test:watch": "pnpm run test --watch"
   },
   "type": "module",
