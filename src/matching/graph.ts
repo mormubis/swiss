@@ -393,7 +393,6 @@ class Graph implements GraphLike {
           }
         }
       }
-
       // -----------------------------------------------------------------------
       // CASE 1: OUTER vertex dual → 0
       // -----------------------------------------------------------------------
@@ -430,11 +429,7 @@ class Graph implements GraphLike {
         if (rb0 !== undefined) {
           for (const rb1 of this.rootBlossoms) {
             if (rb1.label !== Label.OUTER || rb1 === rb0) continue;
-            // rb0 stores in minOuterEdges[rb1.baseVertex.vertexIndex] the vertex
-            // in rb0 closest to rb1.
             const v0 = rb0.minOuterEdges[rb1.baseVertex.vertexIndex];
-            // rb1 stores in minOuterEdges[rb0.baseVertex.vertexIndex] the vertex
-            // in rb1 closest to rb0.
             const v1 = rb1.minOuterEdges[rb0.baseVertex.vertexIndex];
             if (v0 !== undefined && v1 !== undefined) {
               resistanceInto(this.resistanceStorage, v0, v1);
@@ -446,7 +441,6 @@ class Graph implements GraphLike {
             }
           }
         }
-
         // If not found via tracked references, do a brute-force scan as fallback.
         if (vertex0 === undefined || vertex1 === undefined) {
           outerSearch: for (const rb1 of this.rootBlossoms) {
@@ -490,6 +484,7 @@ class Graph implements GraphLike {
         const pathFront: Vertex[] = [vertex0];
         const pathBack: Vertex[] = [vertex1];
 
+        // Expand front toward its exposed root.
         // Expand front toward its exposed root.
         while (pathFront[0]!.rootBlossom!.baseVertexMatch) {
           const front = pathFront[0]!;
@@ -602,8 +597,6 @@ class Graph implements GraphLike {
 
         // Update inner-outer edges for the newly OUTER blossom.
         this.updateInnerOuterEdges(matchedRb);
-
-        // Initialize outer-outer edges for the newly OUTER blossom.
         this.initializeOuterOuterEdgesForBlossom(matchedRb);
 
         // Update minOuterDualVariable for vertices in new OUTER blossom.
@@ -1054,38 +1047,36 @@ class Graph implements GraphLike {
     // The first child also needs parentBlossom = newParent.
     firstChild.parentBlossom = newParent;
 
-    // Close the circular linked list: lastChild.nextBlossom → firstChild.
-    // freeAncestorOfBase iterates the circular list and relies on this.
-    const lastChild2 = newParent.subblossom; // subblossom = last child after connectChildren
-    lastChild2.nextBlossom = firstChild;
-    firstChild.previousBlossom = lastChild2;
+    // connectChildren already creates the circular sibling chain (the last
+    // child's nextBlossom is set to the first child when the path wraps).
+    // Only close manually when the last child differs from the first —
+    // otherwise we overwrite connectChildren's link and create a self-loop.
+    const lastChild2 = newParent.subblossom;
+    if (lastChild2 !== firstChild) {
+      lastChild2.nextBlossom = firstChild;
+      firstChild.previousBlossom = lastChild2;
+    }
 
-    // Link vertex lists of children together in reverse path order.
-    // C++ rootblossom.cpp:166-174 links them so the final list is:
-    //   lastChild → ... → firstChild
+    // Collect child blossoms from the path (C++ getRootBlossomsFromPath,
+    // rootblossomimpl.h:27-38). Step by 2 through the path — each even
+    // index identifies a child blossom. This avoids traversing the circular
+    // sibling list which may have the same blossom at start and end.
+    const children: Blossom[] = [];
+    for (let index = 0; index < path.length; index += 2) {
+      children.push(getAncestorOfVertex(path[index]!));
+    }
+
+    // Link vertex lists in reverse order (C++ rootblossom.cpp:166-174):
+    //   lastChild.tail → secondToLast.head → ... → firstChild.head
     // matching parentblossomimpl.h:28-31 which sets:
     //   vertexListHead = lastChild.vertexListHead
     //   vertexListTail = firstChild.vertexListTail
-    //
-    // Collect children in forward order (firstChild → ... → lastChild),
-    // counting exactly childCount = path.length/2 + 1 children.
-    {
-      const childCount = Math.floor(path.length / 2) + 1;
-      const children: Blossom[] = [];
-      let current: Blossom = firstChild;
-      for (let index = 0; index < childCount; index++) {
-        children.push(current);
-        current = current.nextBlossom!; // safe: cycle is closed
-      }
-
-      // Link in reverse: lastChild.tail → secondToLast.head → ... → firstChild.head.
-      for (let index = children.length - 1; index > 0; index--) {
-        children[index]!.vertexListTail.nextVertex =
-          children[index - 1]!.vertexListHead;
-      }
-      // Terminate the list at firstChild's tail.
-      firstChild.vertexListTail.nextVertex = undefined;
+    for (let index = children.length - 1; index > 0; index--) {
+      children[index]!.vertexListTail.nextVertex =
+        children[index - 1]!.vertexListHead;
     }
+    // Terminate the list at firstChild's tail.
+    firstChild.vertexListTail.nextVertex = undefined;
 
     this.parentBlossoms.push(newParent);
 
