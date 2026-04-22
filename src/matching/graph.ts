@@ -666,6 +666,11 @@ class Graph implements GraphLike {
         // Determine if the path from rootChild to connectChild goes forward
         // (i.e., via nextBlossom links). Walk forward from rootChild;
         // if we reach connectChild, connectForward=true; otherwise false.
+        //
+        // TODO(issue_15): the C++ uses a parity-flip pattern here
+        //   (connectForward starts true, flips per step). Our code always
+        //   returns true for circular lists. Fixing this to match C++ breaks
+        //   n=18 test — other parts of Case 5 may also need fixing.
         let connectForward: boolean;
         {
           let found = false;
