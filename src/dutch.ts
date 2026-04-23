@@ -811,39 +811,9 @@ function pair(
     // (both local < scoreGroupBegin) retain stale high weights from prior
     // brackets. Reset them with fresh weights (lowerInCurrent=false,
     // lowerInNext=false) to prevent MDPs from incorrectly pairing together.
-    for (
-      let largerLocalIndex = 1;
-      largerLocalIndex < scoreGroupBegin;
-      largerLocalIndex++
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const largerGlobal = playersByIndex[largerLocalIndex]!;
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const loPlayer = pairedSorted[largerGlobal]!;
-      for (
-        let smallerLocalIndex = 0;
-        smallerLocalIndex < largerLocalIndex;
-        smallerLocalIndex++
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const smallerGlobal = playersByIndex[smallerLocalIndex]!;
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const hiPlayer = pairedSorted[smallerGlobal]!;
-        const w = computeEdgeWeight(
-          hiPlayer,
-          loPlayer,
-          false, // lowerInCurrent: neither MDP is in the current bracket
-          false, // lowerInNext: neither is in the next score group
-          byeAssigneeScore,
-          playedRounds,
-          expectedRounds,
-          sgp,
-          isSingleDownfloaterByeAssignee,
-          unplayedGameRanks,
-        );
-        mc.setEdgeWeight(largerGlobal, smallerGlobal, w);
-      }
-    }
+    // C++ computeBaseEdgeWeights does NOT reset MDP-MDP edges. They retain
+    // whatever weight was set by the previous bracket iteration or the initial
+    // pass. This is intentional — the stale weights influence MDP selection.
 
     for (
       let largerLocalIndex = scoreGroupBegin;
