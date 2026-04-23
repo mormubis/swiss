@@ -733,6 +733,49 @@ describe('MatchingComputer', () => {
     });
   });
 
+  describe('stale baseVertexMatch regression', () => {
+    it('clears stale baseVertexMatch when neighbor edges are zeroed', () => {
+      // 4 vertices: 0, 1, 2, 3
+      // Initial: high weight edges 0-2 and 1-3 → match (0,2) and (1,3)
+      // Then: finalize pair 0-1 (zero all edges for 0 and 1 except 0-1=1)
+      //        set edge 2-3 to high weight
+      // Expected: computeMatching → 0 matched to 1, 2 matched to 3
+      // Bug: vertex 2 retains stale baseVertexMatch=0, labeled FREE, skipped
+
+      const mc = new MatchingComputer(DynamicUint.from(100));
+      mc.addVertex();
+      mc.addVertex();
+      mc.addVertex();
+      mc.addVertex();
+
+      // Phase 1: match 0-2 and 1-3
+      mc.setEdgeWeight(0, 2, DynamicUint.from(50));
+      mc.setEdgeWeight(1, 3, DynamicUint.from(50));
+      mc.computeMatching();
+      let matching = mc.getMatching();
+      expect(matching[0]).toBe(2);
+      expect(matching[2]).toBe(0);
+      expect(matching[1]).toBe(3);
+      expect(matching[3]).toBe(1);
+
+      // Phase 2: finalize pair 0-1
+      mc.setEdgeWeight(0, 2, DynamicUint.from(0));
+      mc.setEdgeWeight(0, 3, DynamicUint.from(0));
+      mc.setEdgeWeight(1, 2, DynamicUint.from(0));
+      mc.setEdgeWeight(1, 3, DynamicUint.from(0));
+      mc.setEdgeWeight(0, 1, DynamicUint.from(1));
+      mc.setEdgeWeight(2, 3, DynamicUint.from(50));
+
+      mc.computeMatching();
+      matching = mc.getMatching();
+
+      expect(matching[0]).toBe(1);
+      expect(matching[1]).toBe(0);
+      expect(matching[2]).toBe(3);
+      expect(matching[3]).toBe(2);
+    });
+  });
+
   describe('repeated setEdgeWeight + computeMatching cycles', () => {
     it('survives repeated cycles (n=18)', () => {
       const maxW = DynamicUint.from(0);

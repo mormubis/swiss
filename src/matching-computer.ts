@@ -86,8 +86,15 @@ class MatchingComputer {
     // Dissolve stale blossoms around this vertex and reset its dual variable.
     v.rootBlossom!.prepareVertexForWeightAdjustments(v, this.graph);
 
+    const n = this.graph.vertices[neighbor]!;
+    // Dissolve stale blossoms around the neighbor and reset its dual variable.
+    // This clears any stale baseVertexMatch on the neighbor's root blossom,
+    // preventing it from being incorrectly labeled FREE in the next
+    // computeMatching when its prior match partner has been freed.
+    n.rootBlossom!.prepareVertexForWeightAdjustments(n, this.graph);
+
     v.edgeWeights[neighbor] = doubled.clone();
-    this.graph.vertices[neighbor]!.edgeWeights[vertex] = doubled.clone();
+    n.edgeWeights[vertex] = doubled.clone();
   }
 }
 
