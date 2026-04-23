@@ -115,6 +115,12 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
         // Forfeit counts as unplayed (C++ playedGames only increments for
         // gameWasPlayed=true; our unplayedRounds is the inverse).
         unplayedRounds++;
+        // C++ eligibleForBye returns false when any unplayed match gives
+        // points >= pointsForWin. A forfeit win gives 1 point = full win.
+        const pointsFromForfeit = isWhite ? game.result : 1 - game.result;
+        if (pointsFromForfeit >= 1) {
+          byeCount++;
+        }
       } else {
         opponents.add(isWhite ? game.black : game.white);
       }
