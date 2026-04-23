@@ -297,15 +297,19 @@ function computeEdgeWeight(
     orBitAt(w, scoreGroupShifts.get(hi.score) ?? 0, false);
   }
 
-  // C9
+  // C9: key is playedGames (= playedRounds - unplayedRounds), matching C++
   w.shiftGrow(scoreGroupSizeBits);
   w.shiftGrow(scoreGroupSizeBits);
   if (isSingleDownfloaterByeAssignee) {
     if (hi.score === byeAssigneeScore) {
-      w.or(unplayedGameRanks.get(hi.unplayedRounds) ?? 0);
+      w.or(
+        unplayedGameRanks.get(playedRounds - hi.unplayedRounds) ?? 0,
+      );
     }
     if (lo.score === byeAssigneeScore) {
-      w.add(unplayedGameRanks.get(lo.unplayedRounds) ?? 0);
+      w.add(
+        unplayedGameRanks.get(playedRounds - lo.unplayedRounds) ?? 0,
+      );
     }
   }
 
@@ -626,18 +630,17 @@ function pair(
       }
     }
 
-    const byePlayers = sorted
+    // C++ sorts playedGameCounts descending and assigns rank++ to every
+    // entry (including duplicates). Duplicate keys overwrite, so the LAST
+    // occurrence's rank sticks. This means each key maps to the index of
+    // its last occurrence in the sorted array.
+    const playedGameCounts = sorted
       .filter((s) => s.score === byeAssigneeScore)
-      .toSorted((a, b) => a.unplayedRounds - b.unplayedRounds);
+      .map((s) => playedRounds - s.unplayedRounds)
+      .toSorted((a, b) => b - a); // descending
     let rank = 0;
-    const seenUnplayed = new Map<number, number>();
-    for (const p of byePlayers) {
-      if (!seenUnplayed.has(p.unplayedRounds)) {
-        seenUnplayed.set(p.unplayedRounds, rank++);
-      }
-    }
-    for (const [k, v] of seenUnplayed) {
-      unplayedGameRanks.set(k, v);
+    for (const pg of playedGameCounts) {
+      unplayedGameRanks.set(pg, rank++);
     }
   }
 
