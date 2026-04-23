@@ -111,7 +111,11 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
 
       // Forfeit — game was not actually played, opponent not recorded
       // (matches bbpPairings: forbiddenPairs only added when gameWasPlayed)
-      if (!isForfeit) {
+      if (isForfeit) {
+        // Forfeit counts as unplayed (C++ playedGames only increments for
+        // gameWasPlayed=true; our unplayedRounds is the inverse).
+        unplayedRounds++;
+      } else {
         opponents.add(isWhite ? game.black : game.white);
       }
 
