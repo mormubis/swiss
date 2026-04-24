@@ -124,7 +124,7 @@ class Graph implements GraphLike {
 
     // 3. Create the Vertex.
     const zero = this.aboveMaxEdgeWeight.clone().and(0);
-    const vertex = new Vertex(index, zero);
+    const vertex = new Vertex(index, zero, this.aboveMaxEdgeWeight);
     vertex.dualVariable = dual;
     this.vertices.push(vertex);
 

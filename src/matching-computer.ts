@@ -87,10 +87,10 @@ class MatchingComputer {
     v.rootBlossom!.prepareVertexForWeightAdjustments(v, this.graph);
 
     const n = this.graph.vertices[neighbor]!;
-    // Dissolve stale blossoms around the neighbor and reset its dual variable.
-    // This clears any stale baseVertexMatch on the neighbor's root blossom,
-    // preventing it from being incorrectly labeled FREE in the next
-    // computeMatching when its prior match partner has been freed.
+    // Also prepare the neighbor. The C++ only prepares modifiedVertex, but our
+    // blossom port still has a residual state issue that requires this second
+    // prepare. Removing it causes wrong matchings in rounds 3-6 for 115-player
+    // tournaments. The root cause is still under investigation.
     n.rootBlossom!.prepareVertexForWeightAdjustments(n, this.graph);
 
     v.edgeWeights[neighbor] = doubled.clone();

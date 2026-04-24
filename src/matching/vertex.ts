@@ -92,11 +92,16 @@ class Vertex {
   /** Link to the previous sibling blossom within the parent blossom. */
   vertexToPreviousSiblingBlossom: Vertex | undefined;
 
-  constructor(index: number, zero: DynamicUint) {
+  constructor(
+    index: number,
+    zero: DynamicUint,
+    aboveMaxEdgeWeight?: DynamicUint,
+  ) {
     this.vertexIndex = index;
     this.edgeWeights = [];
     this.minOuterEdge = undefined;
-    this.minOuterEdgeResistance = zero.clone();
+    // C++ verteximpl.h:29 — initialised to aboveMaxEdgeWeight (infinity sentinel).
+    this.minOuterEdgeResistance = (aboveMaxEdgeWeight ?? zero).clone();
     this.nextBlossom = undefined;
     this.nextVertex = undefined;
     this.parentBlossom = undefined;

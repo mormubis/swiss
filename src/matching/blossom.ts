@@ -225,7 +225,8 @@ class RootBlossom {
   ) {
     this.baseVertex = baseVertex;
     this.baseVertexMatch = baseVertexMatch;
-    this.label = 3 as Label; // Label.FREE
+    // C++ rootblossomimpl.h:113 — delegates to full ctor with LABEL_ZERO.
+    this.label = 1 as Label; // LABEL_ZERO
     this.labeledVertex = undefined;
     this.labelingVertex = undefined;
     this.minOuterEdgeResistance = graph.aboveMaxEdgeWeight.clone();
