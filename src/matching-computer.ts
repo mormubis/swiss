@@ -89,8 +89,8 @@ class MatchingComputer {
     const n = this.graph.vertices[neighbor]!;
     // Also prepare the neighbor. The C++ only prepares modifiedVertex, but our
     // blossom port still has a residual state issue that requires this second
-    // prepare. Removing it causes wrong matchings in rounds 3-6 for 115-player
-    // tournaments. The root cause is still under investigation.
+    // prepare. Removing it causes wrong matchings due to different tiebreaking
+    // in the augmentation algorithm. Root cause under investigation.
     n.rootBlossom!.prepareVertexForWeightAdjustments(n, this.graph);
 
     v.edgeWeights[neighbor] = doubled.clone();

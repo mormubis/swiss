@@ -683,18 +683,8 @@ class Graph implements GraphLike {
         let isFree = false;
         let linksToNext = false; // tracks edge direction alternation
 
-        // Find the actual previous of rootChild by walking the cycle.
-        let previousChild: Blossom;
-        {
-          let current: Blossom = rootChild;
-          while (
-            current.nextBlossom !== rootChild &&
-            current.nextBlossom !== undefined
-          ) {
-            current = current.nextBlossom;
-          }
-          previousChild = current;
-        }
+        // C++ graph.cpp:705 — use the circular list's previousBlossom directly.
+        let previousChild: Blossom = rootChild.previousBlossom!;
 
         let currentChild: Blossom = rootChild;
         let nextChild: Blossom | undefined;
