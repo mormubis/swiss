@@ -83,8 +83,11 @@ class Graph implements GraphLike {
 
   // Public mutable fields (alphabetical)
 
-  /** All active ParentBlossoms. Implements GraphLike.parentBlossoms. */
-  parentBlossoms: ParentBlossom[] = [];
+  /**
+   * All active ParentBlossoms. Pool with same semantics as rootBlossomPool.
+   * Implements GraphLike.parentBlossomPool.
+   */
+  parentBlossomPool: IterablePool<ParentBlossom>;
 
   /**
    * All active RootBlossoms. Pool with LIFO free-slot recycling and
@@ -100,8 +103,11 @@ class Graph implements GraphLike {
     // aboveMaxEdgeWeight = maxEdgeWeight * 4 + 1 (strictly greater than 4x)
     this.aboveMaxEdgeWeight = maxEdgeWeight.clone().shiftGrow(2).add(1);
     this.resistanceStorage = this.aboveMaxEdgeWeight.clone();
-    // C++ graphimpl.h:20-21 — rootBlossomPool capacity = capacity + 1.
+    // C++ graphimpl.h:20-22 — pool capacities match C++ exactly.
     this.rootBlossomPool = new IterablePool<RootBlossom>(capacity + 1);
+    this.parentBlossomPool = new IterablePool<ParentBlossom>(
+      Math.floor(capacity / 2),
+    );
   }
 
   // Public methods (alphabetical)
@@ -792,8 +798,7 @@ class Graph implements GraphLike {
         } while (currentChild !== rootChild);
 
         // Destroy the old ParentBlossom and RootBlossom.
-        const pbIndex = this.parentBlossoms.indexOf(pb);
-        if (pbIndex !== -1) this.parentBlossoms.splice(pbIndex, 1);
+        this.parentBlossomPool.destroy(pb.poolIndex);
         this.rootBlossomPool.destroy(dissolvedRb.poolIndex);
 
         // Re-initialize minInnerDualVariable after dissolution.
@@ -1014,7 +1019,7 @@ class Graph implements GraphLike {
       firstChild.previousBlossom = lastChild;
     }
 
-    this.parentBlossoms.push(newParent);
+    newParent.poolIndex = this.parentBlossomPool.construct(newParent);
 
     const newRb = new RootBlossom(
       newParent,

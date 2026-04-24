@@ -115,7 +115,7 @@ describe('RootBlossom', () => {
 
   const makeGraph = () => ({
     aboveMaxEdgeWeight: aboveMax,
-    parentBlossoms: [] as ParentBlossom[],
+    parentBlossomPool: new IterablePool<ParentBlossom>(8),
     rootBlossomPool: new IterablePool<RootBlossom>(16),
     vertexDualVariables: [] as DynamicUint[],
   });
@@ -237,7 +237,7 @@ describe('ParentBlossom', () => {
     const aboveMax = DynamicUint.from(100);
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
-      parentBlossoms: [] as ParentBlossom[],
+      parentBlossomPool: new IterablePool<ParentBlossom>(8),
       rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
@@ -252,7 +252,7 @@ describe('ParentBlossom', () => {
     const aboveMax = DynamicUint.from(100);
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
-      parentBlossoms: [] as ParentBlossom[],
+      parentBlossomPool: new IterablePool<ParentBlossom>(8),
       rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
@@ -268,7 +268,7 @@ describe('ParentBlossom', () => {
     const aboveMax = DynamicUint.from(100);
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
-      parentBlossoms: [] as ParentBlossom[],
+      parentBlossomPool: new IterablePool<ParentBlossom>(8),
       rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
@@ -301,7 +301,7 @@ describe('setPointersFromAncestor', () => {
     const aboveMax = DynamicUint.from(100);
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
-      parentBlossoms: [] as ParentBlossom[],
+      parentBlossomPool: new IterablePool<ParentBlossom>(8),
       rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
@@ -486,7 +486,7 @@ describe('Graph', () => {
       const graph = new Graph(0, DynamicUint.from(10));
       expect(graph.vertices.length).toBe(0);
       expect([...graph.rootBlossomPool].length).toBe(0);
-      expect(graph.parentBlossoms.length).toBe(0);
+      expect([...graph.parentBlossomPool].length).toBe(0);
     });
   });
 });

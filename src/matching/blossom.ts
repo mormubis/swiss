@@ -12,7 +12,7 @@ import type { Vertex } from './vertex.js';
  */
 interface GraphLike {
   readonly aboveMaxEdgeWeight: DynamicUint;
-  parentBlossoms: ParentBlossom[];
+  parentBlossomPool: IterablePool<ParentBlossom>;
   rootBlossomPool: IterablePool<RootBlossom>;
   readonly vertexDualVariables: DynamicUint[];
 }
@@ -43,6 +43,9 @@ class ParentBlossom {
 
   /** The immediate parent compound blossom, or `undefined` if directly under a RootBlossom. */
   parentBlossom: ParentBlossom | undefined;
+
+  /** Slot index in the Graph's parentBlossom pool. Set after construction. */
+  poolIndex = -1;
 
   /** Previous blossom child link within the parent blossom's cycle. */
   previousBlossom: Blossom | undefined;
@@ -456,10 +459,9 @@ class RootBlossom {
 
       if (childToFree !== ancestor) {
         // Destroy unused ParentBlossom.
-        const index = graph.parentBlossoms.indexOf(
-          childToFree as ParentBlossom,
+        graph.parentBlossomPool.destroy(
+          (childToFree as ParentBlossom).poolIndex,
         );
-        if (index !== -1) graph.parentBlossoms.splice(index, 1);
       }
 
       childToFree = blossom;
@@ -468,10 +470,9 @@ class RootBlossom {
     }
 
     // Destroy the old RootBlossom's rootChild (the outermost ParentBlossom).
-    const rootChildIndex = graph.parentBlossoms.indexOf(
-      this.rootChild as ParentBlossom,
+    graph.parentBlossomPool.destroy(
+      (this.rootChild as ParentBlossom).poolIndex,
     );
-    if (rootChildIndex !== -1) graph.parentBlossoms.splice(rootChildIndex, 1);
 
     // Destroy this RootBlossom.
     graph.rootBlossomPool.destroy(this.poolIndex);
