@@ -229,7 +229,13 @@ class RootBlossom {
     this.labeledVertex = undefined;
     this.labelingVertex = undefined;
     this.minOuterEdgeResistance = graph.aboveMaxEdgeWeight.clone();
-    this.minOuterEdges = [];
+    // C++ rootblossomimpl.h:109 — minOuterEdges sized from old root blossom.
+    // rootChild.rootBlossom still points to the OLD root at this point, so
+    // use its minOuterEdges length to initialise ours to the same capacity.
+    const oldSize = rootChild.rootBlossom?.minOuterEdges.length ?? 0;
+    this.minOuterEdges = Array.from<Vertex | undefined>({
+      length: oldSize,
+    }).fill();
     this.rootChild = rootChild;
 
     // C++ rootblossomimpl.h:127-129
