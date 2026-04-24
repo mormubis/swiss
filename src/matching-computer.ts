@@ -24,8 +24,8 @@ import type { DynamicUint } from './dynamic-uint.js';
 class MatchingComputer {
   private readonly graph: Graph;
 
-  constructor(maxEdgeWeight: DynamicUint) {
-    this.graph = new Graph(maxEdgeWeight);
+  constructor(capacity: number, maxEdgeWeight: DynamicUint) {
+    this.graph = new Graph(capacity, maxEdgeWeight);
   }
 
   get size(): number {
@@ -38,7 +38,7 @@ class MatchingComputer {
 
   computeMatching(): void {
     this.graph.computeMatching();
-    for (const rb of this.graph.rootBlossoms) {
+    for (const rb of this.graph.rootBlossomPool) {
       rb.putVerticesInMatchingOrder();
     }
   }
@@ -54,7 +54,7 @@ class MatchingComputer {
   getMatching(): number[] {
     const result = Array.from<number>({ length: this.size }).fill(-1);
 
-    for (const rb of this.graph.rootBlossoms) {
+    for (const rb of this.graph.rootBlossomPool) {
       const baseIndex = rb.baseVertex.vertexIndex;
 
       result[baseIndex] = rb.baseVertexMatch

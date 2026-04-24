@@ -302,14 +302,10 @@ function computeEdgeWeight(
   w.shiftGrow(scoreGroupSizeBits);
   if (isSingleDownfloaterByeAssignee) {
     if (hi.score === byeAssigneeScore) {
-      w.or(
-        unplayedGameRanks.get(playedRounds - hi.unplayedRounds) ?? 0,
-      );
+      w.or(unplayedGameRanks.get(playedRounds - hi.unplayedRounds) ?? 0);
     }
     if (lo.score === byeAssigneeScore) {
-      w.add(
-        unplayedGameRanks.get(playedRounds - lo.unplayedRounds) ?? 0,
-      );
+      w.add(unplayedGameRanks.get(playedRounds - lo.unplayedRounds) ?? 0);
     }
   }
 
@@ -680,7 +676,7 @@ function pair(
   const maxEdgeWeight = computeMaxEdgeWeight(sgp);
 
   // Persistent matching computer, populated per-bracket with correct weights.
-  const mc = new MatchingComputer(maxEdgeWeight);
+  const mc = new MatchingComputer(np, maxEdgeWeight);
   for (let index = 0; index < np; index++) mc.addVertex();
 
   // Initialize all edge weights (C++ dutch.cpp lines 835-894).

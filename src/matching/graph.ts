@@ -15,6 +15,7 @@ import {
   getAncestorOfVertex,
   setPointersFromAncestor,
 } from './blossom.js';
+import { IterablePool } from './iterable-pool.js';
 import { Label } from './types.js';
 import { Vertex } from './vertex.js';
 
@@ -72,13 +73,6 @@ class Graph implements GraphLike {
   readonly aboveMaxEdgeWeight: DynamicUint;
 
   /**
-   * Minimum outer edge resistance per RootBlossom slot, indexed in parallel
-   * with rootBlossoms. One DynamicUint per RootBlossom, expanded whenever a
-   * new vertex (and thus a new RootBlossom) is added.
-   */
-  readonly rootBlossomMinOuterEdgeResistances: DynamicUint[] = [];
-
-  /**
    * Dual variable per vertex (aliased by vertex.dualVariable).
    * Implements GraphLike.vertexDualVariables.
    */
@@ -92,16 +86,22 @@ class Graph implements GraphLike {
   /** All active ParentBlossoms. Implements GraphLike.parentBlossoms. */
   parentBlossoms: ParentBlossom[] = [];
 
-  /** All active RootBlossoms. Implements GraphLike.rootBlossoms. */
-  rootBlossoms: RootBlossom[] = [];
+  /**
+   * All active RootBlossoms. Pool with LIFO free-slot recycling and
+   * doubly-linked iteration — matches C++ IterablePool semantics.
+   * Implements GraphLike.rootBlossomPool.
+   */
+  rootBlossomPool: IterablePool<RootBlossom>;
 
   /** Pre-allocated scratch for resistance calculations. */
   private readonly resistanceStorage: DynamicUint;
 
-  constructor(maxEdgeWeight: DynamicUint) {
+  constructor(capacity: number, maxEdgeWeight: DynamicUint) {
     // aboveMaxEdgeWeight = maxEdgeWeight * 4 + 1 (strictly greater than 4x)
     this.aboveMaxEdgeWeight = maxEdgeWeight.clone().shiftGrow(2).add(1);
     this.resistanceStorage = this.aboveMaxEdgeWeight.clone();
+    // C++ graphimpl.h:20-21 — rootBlossomPool capacity = capacity + 1.
+    this.rootBlossomPool = new IterablePool<RootBlossom>(capacity + 1);
   }
 
   // Public methods (alphabetical)
@@ -114,7 +114,7 @@ class Graph implements GraphLike {
     const index = this.vertices.length;
 
     // 1. Expand every existing RootBlossom's minOuterEdges array.
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       rb.minOuterEdges.push(undefined);
     }
 
@@ -148,10 +148,7 @@ class Graph implements GraphLike {
       rb.minOuterEdges.push(undefined);
     }
 
-    this.rootBlossoms.push(rb);
-    this.rootBlossomMinOuterEdgeResistances.push(
-      this.aboveMaxEdgeWeight.clone(),
-    );
+    rb.poolIndex = this.rootBlossomPool.construct(rb);
   }
 
   // ---------------------------------------------------------------------------
@@ -160,8 +157,8 @@ class Graph implements GraphLike {
 
   computeMatching(): void {
     // Parity fix phase: make all exposed-vertex dualVariables have even values.
-    // Iterate over a snapshot because freeAncestorOfBase modifies rootBlossoms.
-    const snapshot = [...this.rootBlossoms];
+    // Iterate over a snapshot because freeAncestorOfBase modifies the pool.
+    const snapshot = [...this.rootBlossomPool];
     for (const rootBlossom of snapshot) {
       if (
         !rootBlossom.baseVertexMatch &&
@@ -224,7 +221,7 @@ class Graph implements GraphLike {
     const minOuterDualVariable = this.aboveMaxEdgeWeight.clone();
     let minOuterDualVariableVertex: Vertex | undefined;
 
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       // Reset labeling state (C++ graph.cpp:188-203).
       // Do NOT reset minOuterEdgeResistance or minOuterEdges[] here — the C++
       // preserves these across augmentation calls. They are recomputed per
@@ -275,7 +272,7 @@ class Graph implements GraphLike {
     // -------------------------------------------------------------------------
     const minOuterOuterEdgeResistance = this.aboveMaxEdgeWeight.clone();
     let minOuterOuterEdgeResistanceRootBlossom: RootBlossom | undefined;
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       if (
         rb.label === Label.OUTER &&
         rb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)
@@ -427,7 +424,7 @@ class Graph implements GraphLike {
 
         const rb0 = minOuterOuterEdgeResistanceRootBlossom;
         if (rb0 !== undefined) {
-          for (const rb1 of this.rootBlossoms) {
+          for (const rb1 of this.rootBlossomPool) {
             if (rb1.label !== Label.OUTER || rb1 === rb0) continue;
             const v0: Vertex | undefined =
               rb0.minOuterEdges[rb1.baseVertex.vertexIndex];
@@ -450,9 +447,9 @@ class Graph implements GraphLike {
         }
         // If not found via tracked references, do a brute-force scan as fallback.
         if (vertex0 === undefined || vertex1 === undefined) {
-          outerSearch: for (const rb1 of this.rootBlossoms) {
+          outerSearch: for (const rb1 of this.rootBlossomPool) {
             if (rb1.label !== Label.OUTER) continue;
-            for (const rb2 of this.rootBlossoms) {
+            for (const rb2 of this.rootBlossomPool) {
               if (rb2 === rb1 || rb2.label !== Label.OUTER) continue;
               for (
                 let v1: Vertex | undefined = rb1.rootChild.vertexListHead;
@@ -549,7 +546,7 @@ class Graph implements GraphLike {
           // Re-initialize minOuterOuterEdgeResistance.
           minOuterOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
           minOuterOuterEdgeResistanceRootBlossom = undefined;
-          for (const rb of this.rootBlossoms) {
+          for (const rb of this.rootBlossomPool) {
             if (
               rb.label === Label.OUTER &&
               rb.minOuterEdgeResistance.lt(minOuterOuterEdgeResistance)
@@ -649,9 +646,8 @@ class Graph implements GraphLike {
 
         const dissolvedRb = pb.rootBlossom!;
 
-        // Hide the dissolved RootBlossom from rootBlossoms.
-        const rbIndex = this.rootBlossoms.indexOf(dissolvedRb);
-        if (rbIndex !== -1) this.rootBlossoms.splice(rbIndex, 1);
+        // Hide the dissolved RootBlossom from the pool.
+        this.rootBlossomPool.hide(dissolvedRb.poolIndex);
 
         // The root child of the dissolved blossom is pb.
         // In C++: rootVertex = dissolvedRb.baseVertex
@@ -759,10 +755,7 @@ class Graph implements GraphLike {
             newRb.minOuterEdges.push(undefined);
           }
 
-          this.rootBlossoms.push(newRb);
-          this.rootBlossomMinOuterEdgeResistances.push(
-            this.aboveMaxEdgeWeight.clone(),
-          );
+          newRb.poolIndex = this.rootBlossomPool.construct(newRb);
           newRootBlossoms.push(newRb);
 
           // For OUTER children: update inner-outer and outer-outer edges,
@@ -801,6 +794,7 @@ class Graph implements GraphLike {
         // Destroy the old ParentBlossom and RootBlossom.
         const pbIndex = this.parentBlossoms.indexOf(pb);
         if (pbIndex !== -1) this.parentBlossoms.splice(pbIndex, 1);
+        this.rootBlossomPool.destroy(dissolvedRb.poolIndex);
 
         // Re-initialize minInnerDualVariable after dissolution.
         minInnerDualVariable.copyFrom(this.aboveMaxEdgeWeight);
@@ -861,14 +855,14 @@ class Graph implements GraphLike {
    * Updates minOuterEdges and minOuterEdgeResistance for each OUTER blossom.
    */
   private initializeOuterOuterEdges(): void {
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       if (rb.label !== Label.OUTER) continue;
       // Reset per-blossom outer-outer tracking (C++ graph.cpp:275).
       rb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
       for (let index = 0; index < rb.minOuterEdges.length; index++) {
         rb.minOuterEdges[index] = undefined;
       }
-      for (const otherRb of this.rootBlossoms) {
+      for (const otherRb of this.rootBlossomPool) {
         if (otherRb === rb) continue;
         if (otherRb.label !== Label.OUTER) continue;
         const pairMin = this.aboveMaxEdgeWeight.clone();
@@ -881,7 +875,7 @@ class Graph implements GraphLike {
   private initializeOuterOuterEdgesForBlossom(newOuterRb: RootBlossom): void {
     newOuterRb.minOuterEdgeResistance.copyFrom(this.aboveMaxEdgeWeight);
     const pairMin = this.aboveMaxEdgeWeight.clone();
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       if (rb === newOuterRb || rb.label !== Label.OUTER) continue;
       pairMin.copyFrom(this.aboveMaxEdgeWeight);
       newOuterRb.minOuterEdges[rb.baseVertex.vertexIndex] = undefined;
@@ -966,7 +960,7 @@ class Graph implements GraphLike {
     setValue: (v: DynamicUint) => void,
   ): void {
     const minValue = this.aboveMaxEdgeWeight.clone();
-    for (const rb of this.rootBlossoms) {
+    for (const rb of this.rootBlossomPool) {
       if (rb.label === Label.INNER && !rb.rootChild.isVertex) {
         const pb = rb.rootChild as ParentBlossom;
         if (pb.dualVariable.lt(minValue)) {
@@ -1057,14 +1051,10 @@ class Graph implements GraphLike {
     newRb.updateRootBlossomInDescendants();
 
     for (const rb of originalBlossoms) {
-      const index = this.rootBlossoms.indexOf(rb);
-      if (index !== -1) this.rootBlossoms.splice(index, 1);
+      this.rootBlossomPool.destroy(rb.poolIndex);
     }
 
-    this.rootBlossoms.push(newRb);
-    this.rootBlossomMinOuterEdgeResistances.push(
-      this.aboveMaxEdgeWeight.clone(),
-    );
+    newRb.poolIndex = this.rootBlossomPool.construct(newRb);
 
     this.initializeOuterOuterEdgesForBlossom(newRb);
     this.updateInnerOuterEdges(newRb);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type { DynamicUint } from '../dynamic-uint.js';
+import type { IterablePool } from './iterable-pool.js';
 import type { Label } from './types.js';
 import type { Vertex } from './vertex.js';
 
@@ -12,8 +13,8 @@ import type { Vertex } from './vertex.js';
 interface GraphLike {
   readonly aboveMaxEdgeWeight: DynamicUint;
   parentBlossoms: ParentBlossom[];
+  rootBlossomPool: IterablePool<RootBlossom>;
   readonly vertexDualVariables: DynamicUint[];
-  rootBlossoms: RootBlossom[];
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +215,9 @@ class RootBlossom {
    */
   minOuterEdges: (Vertex | undefined)[];
 
+  /** Slot index in the Graph's rootBlossom pool. Set after construction. */
+  poolIndex = -1;
+
   /** The direct child of this RootBlossom in the blossom tree. */
   rootChild: Blossom;
 
@@ -393,7 +397,7 @@ class RootBlossom {
       this.baseVertexMatch,
       graph,
     );
-    graph.rootBlossoms.push(ancestorRoot);
+    ancestorRoot.poolIndex = graph.rootBlossomPool.construct(ancestorRoot);
     ancestorRoot.updateRootBlossomInDescendants();
 
     for (
@@ -431,7 +435,7 @@ class RootBlossom {
           siblingBaseVertexMatch,
           graph,
         );
-        graph.rootBlossoms.push(siblingRoot);
+        siblingRoot.poolIndex = graph.rootBlossomPool.construct(siblingRoot);
         siblingRoot.updateRootBlossomInDescendants();
 
         for (
@@ -470,8 +474,7 @@ class RootBlossom {
     if (rootChildIndex !== -1) graph.parentBlossoms.splice(rootChildIndex, 1);
 
     // Destroy this RootBlossom.
-    const selfIndex = graph.rootBlossoms.indexOf(this);
-    if (selfIndex !== -1) graph.rootBlossoms.splice(selfIndex, 1);
+    graph.rootBlossomPool.destroy(this.poolIndex);
   }
 }
 

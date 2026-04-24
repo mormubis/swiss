@@ -9,6 +9,7 @@ import {
   setPointersFromAncestor,
 } from '../matching/blossom.js';
 import { Graph } from '../matching/graph.js';
+import { IterablePool } from '../matching/iterable-pool.js';
 import { Vertex } from '../matching/vertex.js';
 import { MatchingComputer } from '../matching-computer.js';
 
@@ -115,7 +116,7 @@ describe('RootBlossom', () => {
   const makeGraph = () => ({
     aboveMaxEdgeWeight: aboveMax,
     parentBlossoms: [] as ParentBlossom[],
-    rootBlossoms: [] as RootBlossom[],
+    rootBlossomPool: new IterablePool<RootBlossom>(16),
     vertexDualVariables: [] as DynamicUint[],
   });
 
@@ -158,7 +159,7 @@ describe('RootBlossom', () => {
       const graph = makeGraph();
       const root = new RootBlossom(v, v, undefined, graph);
       v.rootBlossom = root;
-      graph.rootBlossoms.push(root);
+      root.poolIndex = graph.rootBlossomPool.construct(root);
 
       root.prepareVertexForWeightAdjustments(v, graph);
 
@@ -185,7 +186,8 @@ describe('RootBlossom', () => {
       root0.baseVertexMatch = v1;
       root1.baseVertexMatch = v0;
 
-      graph.rootBlossoms.push(root0, root1);
+      root0.poolIndex = graph.rootBlossomPool.construct(root0);
+      root1.poolIndex = graph.rootBlossomPool.construct(root1);
 
       root0.prepareVertexForWeightAdjustments(v0, graph);
 
@@ -200,7 +202,7 @@ describe('RootBlossom', () => {
       const graph = makeGraph();
       const root = new RootBlossom(v, v, undefined, graph);
       v.rootBlossom = root;
-      graph.rootBlossoms.push(root);
+      root.poolIndex = graph.rootBlossomPool.construct(root);
 
       root.prepareVertexForWeightAdjustments(v, graph);
 
@@ -236,7 +238,7 @@ describe('ParentBlossom', () => {
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
       parentBlossoms: [] as ParentBlossom[],
-      rootBlossoms: [] as RootBlossom[],
+      rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
     const root = new RootBlossom(v, v, undefined, graph);
@@ -251,7 +253,7 @@ describe('ParentBlossom', () => {
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
       parentBlossoms: [] as ParentBlossom[],
-      rootBlossoms: [] as RootBlossom[],
+      rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
     const root = new RootBlossom(v, v, undefined, graph);
@@ -267,7 +269,7 @@ describe('ParentBlossom', () => {
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
       parentBlossoms: [] as ParentBlossom[],
-      rootBlossoms: [] as RootBlossom[],
+      rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
     const root = new RootBlossom(v, v, undefined, graph);
@@ -300,7 +302,7 @@ describe('setPointersFromAncestor', () => {
     const graph = {
       aboveMaxEdgeWeight: aboveMax,
       parentBlossoms: [] as ParentBlossom[],
-      rootBlossoms: [] as RootBlossom[],
+      rootBlossomPool: new IterablePool<RootBlossom>(16),
       vertexDualVariables: [] as DynamicUint[],
     };
     const root = new RootBlossom(v, v, undefined, graph);
@@ -322,7 +324,7 @@ describe('setPointersFromAncestor', () => {
  * Build a Graph with `n` vertices and maximum edge weight `maxWeight`.
  */
 function makeTestGraph(n: number, maxWeight: number): Graph {
-  const graph = new Graph(DynamicUint.from(maxWeight));
+  const graph = new Graph(n, DynamicUint.from(maxWeight));
   for (let index = 0; index < n; index++) graph.addVertex();
   return graph;
 }
@@ -352,7 +354,7 @@ function setEdgeWeight(
  * Here we use the same approach — call it on each vertex before computeMatching.
  */
 function initializeDuals(graph: Graph): void {
-  for (const rb of graph.rootBlossoms) {
+  for (const rb of graph.rootBlossomPool) {
     rb.prepareVertexForWeightAdjustments(rb.baseVertex, graph);
   }
 }
@@ -365,7 +367,7 @@ function initializeDuals(graph: Graph): void {
 function getMatching(graph: Graph): number[] {
   const result = Array.from<number>({ length: graph.vertices.length }).fill(-1);
 
-  for (const rb of graph.rootBlossoms) {
+  for (const rb of graph.rootBlossomPool) {
     rb.putVerticesInMatchingOrder();
     const baseIndex = rb.baseVertex.vertexIndex;
     result[baseIndex] = rb.baseVertexMatch
@@ -388,14 +390,14 @@ function getMatching(graph: Graph): number[] {
 describe('Graph', () => {
   describe('addVertex', () => {
     it('creates a vertex with the correct index', () => {
-      const graph = makeTestGraph(0, 100);
+      const graph = new Graph(1, DynamicUint.from(100));
       graph.addVertex();
       expect(graph.vertices.length).toBe(1);
       expect(graph.vertices[0]!.vertexIndex).toBe(0);
     });
 
     it('expands edgeWeights for all vertices', () => {
-      const graph = makeTestGraph(0, 100);
+      const graph = new Graph(2, DynamicUint.from(100));
       graph.addVertex();
       graph.addVertex();
       // Each vertex should have 2 edge weight slots (one per vertex).
@@ -405,11 +407,11 @@ describe('Graph', () => {
 
     it('creates a RootBlossom for each vertex', () => {
       const graph = makeTestGraph(3, 100);
-      expect(graph.rootBlossoms.length).toBe(3);
+      expect([...graph.rootBlossomPool].length).toBe(3);
     });
 
     it('new vertex has a singleton RootBlossom', () => {
-      const graph = makeTestGraph(0, 100);
+      const graph = new Graph(1, DynamicUint.from(100));
       graph.addVertex();
       const v = graph.vertices[0]!;
       expect(v.rootBlossom).toBeDefined();
@@ -432,7 +434,7 @@ describe('Graph', () => {
     });
 
     it('aboveMaxEdgeWeight is strictly greater than 4x maxEdgeWeight', () => {
-      const graph = makeTestGraph(0, 10);
+      const graph = new Graph(0, DynamicUint.from(10));
       // aboveMaxEdgeWeight = 10 * 4 + 1 = 41
       expect(graph.aboveMaxEdgeWeight.toBigInt()).toBe(41n);
     });
@@ -456,7 +458,7 @@ describe('Graph', () => {
       const graph = makeTestGraph(1, 10);
       initializeDuals(graph);
       graph.computeMatching();
-      expect(graph.rootBlossoms[0]!.baseVertexMatch).toBeUndefined();
+      expect([...graph.rootBlossomPool][0]!.baseVertexMatch).toBeUndefined();
     });
 
     it('three vertices, one strong edge — matches the strongest pair', () => {
@@ -475,15 +477,15 @@ describe('Graph', () => {
 
   describe('constructor', () => {
     it('aboveMaxEdgeWeight is set correctly', () => {
-      const graph = new Graph(DynamicUint.from(100));
+      const graph = new Graph(0, DynamicUint.from(100));
       // aboveMaxEdgeWeight = 100 * 4 + 1 = 401
       expect(graph.aboveMaxEdgeWeight.toBigInt()).toBe(401n);
     });
 
     it('starts with empty vertices and blossoms', () => {
-      const graph = new Graph(DynamicUint.from(10));
+      const graph = new Graph(0, DynamicUint.from(10));
       expect(graph.vertices.length).toBe(0);
-      expect(graph.rootBlossoms.length).toBe(0);
+      expect([...graph.rootBlossomPool].length).toBe(0);
       expect(graph.parentBlossoms.length).toBe(0);
     });
   });
@@ -534,7 +536,7 @@ function computeViaMatchingComputer(
   edgeList: [number, number, number][],
 ): number[] {
   const maxW = Math.max(...edgeList.map(([u, v, w]) => Math.max(u, v, w)), 1);
-  const mc = new MatchingComputer(DynamicUint.from(maxW));
+  const mc = new MatchingComputer(vertexCount, DynamicUint.from(maxW));
   for (let index = 0; index < vertexCount; index++) mc.addVertex();
   for (const [u, v, w] of edgeList) {
     mc.setEdgeWeight(u, v, DynamicUint.from(w));
@@ -546,12 +548,12 @@ function computeViaMatchingComputer(
 describe('MatchingComputer', () => {
   describe('constructor and addVertex', () => {
     it('starts with zero vertices', () => {
-      const mc = new MatchingComputer(DynamicUint.from(100));
+      const mc = new MatchingComputer(0, DynamicUint.from(100));
       expect(mc.size).toBe(0);
     });
 
     it('addVertex increments size', () => {
-      const mc = new MatchingComputer(DynamicUint.from(100));
+      const mc = new MatchingComputer(2, DynamicUint.from(100));
       mc.addVertex();
       mc.addVertex();
       expect(mc.size).toBe(2);
@@ -644,7 +646,7 @@ describe('MatchingComputer', () => {
 
   describe('persistence test', () => {
     it('preserves matching after unrelated setEdgeWeight', () => {
-      const mc = new MatchingComputer(DynamicUint.from(100));
+      const mc = new MatchingComputer(4, DynamicUint.from(100));
       for (let index = 0; index < 4; index++) mc.addVertex();
       mc.setEdgeWeight(0, 1, DynamicUint.from(50));
       mc.setEdgeWeight(2, 3, DynamicUint.from(50));
@@ -661,7 +663,7 @@ describe('MatchingComputer', () => {
     it('sequential setEdgeWeight + computeMatching cycles — no infinite loop', () => {
       // 6 vertices, multiple compute cycles with changing edge weights.
       // This exercises the augmentMatching loop repeatedly to catch infinite loops.
-      const mc = new MatchingComputer(DynamicUint.from(100));
+      const mc = new MatchingComputer(6, DynamicUint.from(100));
       for (let index = 0; index < 6; index++) mc.addVertex();
 
       // Round 1: simple disjoint pairs.
@@ -742,7 +744,7 @@ describe('MatchingComputer', () => {
       // Expected: computeMatching → 0 matched to 1, 2 matched to 3
       // Bug: vertex 2 retains stale baseVertexMatch=0, labeled FREE, skipped
 
-      const mc = new MatchingComputer(DynamicUint.from(100));
+      const mc = new MatchingComputer(4, DynamicUint.from(100));
       mc.addVertex();
       mc.addVertex();
       mc.addVertex();
@@ -788,7 +790,7 @@ describe('MatchingComputer', () => {
       maxW.subtract(1);
 
       const n = 18;
-      const mc = new MatchingComputer(maxW);
+      const mc = new MatchingComputer(n, maxW);
       for (let index = 0; index < n; index++) mc.addVertex();
 
       // Initial edges.
@@ -808,13 +810,19 @@ describe('MatchingComputer', () => {
         for (let k = 0; k < 100; k++) {
           const index = ((round + 2) * 7 + k * 3) % n;
           const index_ = (index + 1 + k) % n;
-          mc.setEdgeWeight(index, index_, maxW.clone().shiftRight((k % 10) + 1));
+          mc.setEdgeWeight(
+            index,
+            index_,
+            maxW.clone().shiftRight((k % 10) + 1),
+          );
         }
         mc.computeMatching();
       }
 
       const matching = mc.getMatching();
-      const matched = matching.filter((m, index) => m !== index && m !== -1).length;
+      const matched = matching.filter(
+        (m, index) => m !== index && m !== -1,
+      ).length;
       expect(matched).toBeGreaterThan(0);
     });
   });
