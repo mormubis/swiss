@@ -333,7 +333,7 @@ function computeEdgeWeight(
       (loCI === hiCI
         ? repeatedColor(lo) === undefined ||
           repeatedColor(lo) !== repeatedColor(hi)
-        : (loCI > hiCI ? hi : lo).preferredColor !==
+        : repeatedColor(loCI > hiCI ? hi : lo) !==
           invertColor(lo.preferredColor));
     if (ok) w.or(1);
   }
@@ -418,7 +418,10 @@ function computeEdgeWeight(
 // computeMaxEdgeWeight — upper bound on any edge weight (max=true variant)
 // ---------------------------------------------------------------------------
 
-function computeMaxEdgeWeight(sgp: ScoreGroupParameters): DynamicUint {
+function computeMaxEdgeWeight(
+  sgp: ScoreGroupParameters,
+  playedRounds: number,
+): DynamicUint {
   const { scoreGroupSizeBits, scoreGroupsShift } = sgp;
   const w = DynamicUint.from(0);
 
@@ -442,17 +445,25 @@ function computeMaxEdgeWeight(sgp: ScoreGroupParameters): DynamicUint {
   w.shiftGrow(scoreGroupSizeBits);
   w.shiftGrow(scoreGroupSizeBits);
 
-  // C14–C17 (up to 4 slots)
-  w.shiftGrow(scoreGroupSizeBits);
-  w.shiftGrow(scoreGroupSizeBits);
-  w.shiftGrow(scoreGroupSizeBits);
-  w.shiftGrow(scoreGroupSizeBits);
+  // C14–C17 (conditional on playedRounds, matching C++ template)
+  if (playedRounds >= 1) {
+    w.shiftGrow(scoreGroupSizeBits); // C14
+    w.shiftGrow(scoreGroupSizeBits); // C15
+  }
+  if (playedRounds > 1) {
+    w.shiftGrow(scoreGroupSizeBits); // C16
+    w.shiftGrow(scoreGroupSizeBits); // C17
+  }
 
-  // C18–C21 (up to 4 slots)
-  w.shiftGrow(scoreGroupsShift);
-  w.shiftGrow(scoreGroupsShift);
-  w.shiftGrow(scoreGroupsShift);
-  w.shiftGrow(scoreGroupsShift);
+  // C18–C21 (conditional on playedRounds, matching C++ template)
+  if (playedRounds >= 1) {
+    w.shiftGrow(scoreGroupsShift); // C18
+    w.shiftGrow(scoreGroupsShift); // C19
+  }
+  if (playedRounds > 1) {
+    w.shiftGrow(scoreGroupsShift); // C20
+    w.shiftGrow(scoreGroupsShift); // C21
+  }
 
   // Ordering slots (3 × scoreGroupSizeBits)
   w.shiftGrow(scoreGroupSizeBits);
@@ -494,7 +505,7 @@ function buildFeasibilityWeight(
       (scoreGroupShifts.get(lo.score) ?? 0),
   );
   w.shiftGrow(scoreGroupSizeBits);
-  if (hi.score >= topScore) w.or(1);
+  if (lo.score >= topScore) w.or(1);
   return w;
 }
 
@@ -673,50 +684,36 @@ function pair(
   // -------------------------------------------------------------------------
   // Phase 4: Initialize MatchingComputer + maxEdgeWeight
   // -------------------------------------------------------------------------
-  const maxEdgeWeight = computeMaxEdgeWeight(sgp);
+  const maxEdgeWeight = computeMaxEdgeWeight(sgp, playedRounds);
 
   // Persistent matching computer, populated per-bracket with correct weights.
   const mc = new MatchingComputer(np, maxEdgeWeight);
   for (let index = 0; index < np; index++) mc.addVertex();
 
-  // Initialize all edge weights (C++ dutch.cpp lines 835-894).
-  // For even player counts, use computeEdgeWeight with lowerInCurrent=false,
-  // lowerInNext=false. These base weights persist in the MatchingComputer
-  // and influence matchings in brackets where players haven't been explicitly
-  // paired yet.
+  // Initialize all edge weights (C++ dutch.cpp lines 894-925).
+  // C++ always uses computeEdgeWeight (not feasibility weight) for the initial
+  // matchingComputer state. For odd counts, the feasibility pass already ran
+  // above to determine byeAssigneeScore; now re-initialize with full weights.
+  // For even counts, byeAssigneeScore=0 and isSingleDownfloaterByeAssignee=false.
   for (let playerIndex = 0; playerIndex < np; playerIndex++) {
     for (let opponentIndex = 0; opponentIndex < playerIndex; opponentIndex++) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const player = pairedSorted[playerIndex]!;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const opponent = pairedSorted[opponentIndex]!;
-      if (needsBye) {
-        // Odd player count: use feasibility weights (C++ lines 848-873)
-        const w = buildFeasibilityWeight(
-          opponent,
-          player,
-          pairedSorted[0]?.score ?? 0,
-          playedRounds,
-          expectedRounds,
-          sgp,
-        );
-        mc.setEdgeWeight(playerIndex, opponentIndex, w);
-      } else {
-        // Even player count: use computeEdgeWeight with no bracket context
-        const w = computeEdgeWeight(
-          opponent,
-          player,
-          false,
-          false,
-          0,
-          playedRounds,
-          expectedRounds,
-          sgp,
-          false,
-          unplayedGameRanks,
-        );
-        mc.setEdgeWeight(playerIndex, opponentIndex, w);
-      }
+      const w = computeEdgeWeight(
+        opponent,
+        player,
+        false,
+        false,
+        byeAssigneeScore,
+        playedRounds,
+        expectedRounds,
+        sgp,
+        isSingleDownfloaterByeAssignee,
+        unplayedGameRanks,
+      );
+      mc.setEdgeWeight(playerIndex, opponentIndex, w);
     }
   }
 
@@ -1484,56 +1481,46 @@ function pair(
     const newPlayersByIndex: number[] = [];
     let newScoreGroupBegin = 0;
 
-    // Update isSingleDownfloaterByeAssignee for next bracket
-    // (bbpPairings does this check)
-    if (
+    // Update isSingleDownfloaterByeAssignee for next bracket.
+    // C++ uses scoreGroupIterator (the first player in the current bracket's
+    // score group = the group added at the start of this iteration).
+    // scoreGroupArrays[sgIterator - 1] is that group (sgIterator was incremented
+    // after adding the group).
+    const currentGroupScore =
+      sgIterator > 0
+        ? (pairedSorted[scoreGroupArrays[sgIterator - 1]?.[0] ?? 0]?.score ??
+          -1)
+        : -1;
+
+    // Preliminary (may be set to false in the carry-forward loop)
+    isSingleDownfloaterByeAssignee =
       needsBye &&
-      sgIterator <= scoreGroupArrays.length &&
-      byeAssigneeScore >=
-        (pairedSorted[scoreGroupArrays[sgIterator - 1]?.[0] ?? 0]?.score ?? -1)
-    ) {
-      // Preliminary: might be true
-      let stillSingle = true;
-      for (
-        let playerLocal = 0;
-        playerLocal < nextScoreGroupBegin;
-        playerLocal++
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const playerGlobal = playersByIndex[playerLocal]!;
-        if (playerLocal < nextScoreGroupBegin && matched[playerGlobal]) {
-          const matchG = stableMatching[playerGlobal] ?? -1;
-          const nextGroupScore =
-            sgIterator < scoreGroupArrays.length
-              ? (pairedSorted[scoreGroupArrays[sgIterator]?.[0] ?? 0]?.score ??
-                -1)
-              : -1;
-          if (
-            matchG >= 0 &&
-            (pairedSorted[matchG]?.score ?? -1) < nextGroupScore
-          ) {
-            stillSingle = false;
-            break;
-          }
-        }
-      }
-      isSingleDownfloaterByeAssignee = stillSingle;
-    } else {
-      isSingleDownfloaterByeAssignee = false;
-    }
+      currentGroupScore >= 0 &&
+      byeAssigneeScore >= currentGroupScore;
 
     for (const [playerLocal, element] of playersByIndex.entries()) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const playerGlobal = element!;
       if (playerLocal < nextScoreGroupBegin && matched[playerGlobal]) {
-        // Player was finalized — record if needed (already done in finalizePair)
-        // noop here — matchedPairs already recorded
+        // Player was finalized — noop (matchedPairs already recorded)
         void 0;
       } else {
         // Carry to next bracket
         newPlayersByIndex.push(playerGlobal);
         if (playerLocal < nextScoreGroupBegin) {
           newScoreGroupBegin++;
+        }
+        // C++ checks: if carried-forward player's match partner has score
+        // below the current bracket group score, clear the flag.
+        if (isSingleDownfloaterByeAssignee) {
+          const matchG = stableMatching[playerGlobal] ?? -1;
+          if (
+            matchG >= 0 &&
+            matchG !== playerGlobal &&
+            (pairedSorted[matchG]?.score ?? -1) < currentGroupScore
+          ) {
+            isSingleDownfloaterByeAssignee = false;
+          }
         }
       }
     }
