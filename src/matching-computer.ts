@@ -80,7 +80,7 @@ class MatchingComputer {
   setEdgeWeight(vertex: number, neighbor: number, weight: DynamicUint): void {
     // Internally weights are stored doubled (2W) to keep dual arithmetic
     // integral. Left-shift by 1 is equivalent to multiply by 2.
-    const doubled = weight.clone().shiftLeft(1);
+    const doubled = weight.clone().shiftGrow(1);
 
     const v = this.graph.vertices[vertex]!;
     // C++ computer.cpp:89-91 — only prepare the modified vertex, not the
