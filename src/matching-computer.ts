@@ -83,16 +83,11 @@ class MatchingComputer {
     const doubled = weight.clone().shiftLeft(1);
 
     const v = this.graph.vertices[vertex]!;
-    // Dissolve stale blossoms around this vertex and reset its dual variable.
+    // C++ computer.cpp:89-91 — only prepare the modified vertex, not the
+    // neighbor. Dissolves stale blossoms and resets dual variable.
     v.rootBlossom!.prepareVertexForWeightAdjustments(v, this.graph);
 
     const n = this.graph.vertices[neighbor]!;
-    // Also prepare the neighbor. The C++ only prepares modifiedVertex, but our
-    // blossom port still has a residual state issue that requires this second
-    // prepare. Removing it causes wrong matchings due to different tiebreaking
-    // in the augmentation algorithm. Root cause under investigation.
-    n.rootBlossom!.prepareVertexForWeightAdjustments(n, this.graph);
-
     v.edgeWeights[neighbor] = doubled.clone();
     n.edgeWeights[vertex] = doubled.clone();
   }

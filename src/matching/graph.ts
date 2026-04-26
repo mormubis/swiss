@@ -222,35 +222,32 @@ class Graph implements GraphLike {
     // INITIALIZATION (initializeLabeling)
     // -------------------------------------------------------------------------
 
-    // minOuterDualVariable tracks the minimum dual among OUTER vertices,
-    // plus the vertex that achieves it.
-    const minOuterDualVariable = this.aboveMaxEdgeWeight.clone();
-    let minOuterDualVariableVertex: Vertex | undefined;
-
+    // C++ graph.cpp:188-203 — initializeLabeling: set labels on all root
+    // blossoms FIRST, before scanning for minOuterDualVariable.
     for (const rb of this.rootBlossomPool) {
-      // Reset labeling state (C++ graph.cpp:188-203).
-      // Do NOT reset minOuterEdgeResistance or minOuterEdges[] here — the C++
-      // preserves these across augmentation calls. They are recomputed per
-      // OUTER blossom in initializeOuterOuterEdges().
-      // Per-vertex minOuterEdge is reset in initializeInnerOuterEdges().
       rb.labeledVertex = undefined;
       rb.labelingVertex = undefined;
 
       if (rb.baseVertexMatch) {
         rb.label = Label.FREE;
       } else {
-        // Exposed vertex.
-        if (rb.baseVertex.dualVariable.isZero()) {
-          rb.label = Label.ZERO;
-        } else {
-          rb.label = Label.OUTER;
-          // Track min outer dual variable vertex.
-          if (rb.baseVertex.dualVariable.lt(minOuterDualVariable)) {
-            minOuterDualVariable.copyFrom(rb.baseVertex.dualVariable);
-            minOuterDualVariableVertex = rb.baseVertex;
-          }
-        }
+        rb.label = rb.baseVertex.dualVariable.isZero()
+          ? Label.ZERO
+          : Label.OUTER;
       }
+    }
+
+    // C++ graph.cpp:399-412 — scan ALL vertices (not just base vertices)
+    // for minimum dual variable among OUTER root blossoms. This matters
+    // when compound OUTER blossoms exist: the min-dual vertex may not be
+    // the base vertex.
+    const minOuterDualVariable = this.aboveMaxEdgeWeight.clone();
+    let minOuterDualVariableVertex: Vertex | undefined;
+    for (const vertex of this.vertices) {
+      if (vertex.rootBlossom!.label === Label.OUTER && vertex.dualVariable.lt(minOuterDualVariable)) {
+          minOuterDualVariable.copyFrom(vertex.dualVariable);
+          minOuterDualVariableVertex = vertex;
+        }
     }
 
     // If no OUTER vertices, no augmentation possible.
