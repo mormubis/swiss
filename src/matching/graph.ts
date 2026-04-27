@@ -244,10 +244,13 @@ class Graph implements GraphLike {
     const minOuterDualVariable = this.aboveMaxEdgeWeight.clone();
     let minOuterDualVariableVertex: Vertex | undefined;
     for (const vertex of this.vertices) {
-      if (vertex.rootBlossom!.label === Label.OUTER && vertex.dualVariable.lt(minOuterDualVariable)) {
-          minOuterDualVariable.copyFrom(vertex.dualVariable);
-          minOuterDualVariableVertex = vertex;
-        }
+      if (
+        vertex.rootBlossom!.label === Label.OUTER &&
+        vertex.dualVariable.lt(minOuterDualVariable)
+      ) {
+        minOuterDualVariable.copyFrom(vertex.dualVariable);
+        minOuterDualVariableVertex = vertex;
+      }
     }
 
     // If no OUTER vertices, no augmentation possible.

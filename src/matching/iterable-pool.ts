@@ -35,9 +35,7 @@ class IterablePool<T> {
   #unallocatedHead: number;
 
   constructor(capacity: number) {
-    this.#slots = Array.from<T | undefined>({ length: capacity }).fill(
-      
-    );
+    this.#slots = Array.from<T | undefined>({ length: capacity });
     this.#forward = new Int32Array(capacity).fill(-1);
     this.#backward = new Int32Array(capacity).fill(-1);
     // Initialize free list: 0 → 1 → 2 → ... → capacity-1
@@ -87,11 +85,17 @@ class IterablePool<T> {
     const bwd = this.#backward[slot]!;
 
     // Unlink from whatever list it's in
-    if (fwd === -1) {this.#tail = bwd;}
-    else {this.#backward[fwd] = bwd;}
+    if (fwd === -1) {
+      this.#tail = bwd;
+    } else {
+      this.#backward[fwd] = bwd;
+    }
 
-    if (bwd === -1) {this.#allocatedHead = fwd;}
-    else {this.#forward[bwd] = fwd;}
+    if (bwd === -1) {
+      this.#allocatedHead = fwd;
+    } else {
+      this.#forward[bwd] = fwd;
+    }
 
     if (this.#head === slot) this.#head = fwd;
 
@@ -114,11 +118,17 @@ class IterablePool<T> {
     const bwd = this.#backward[slot]!;
 
     // Unlink from iteration list
-    if (fwd === -1) {this.#tail = bwd;}
-    else {this.#backward[fwd] = bwd;}
+    if (fwd === -1) {
+      this.#tail = bwd;
+    } else {
+      this.#backward[fwd] = bwd;
+    }
 
-    if (bwd === -1) {this.#allocatedHead = fwd;}
-    else {this.#forward[bwd] = fwd;}
+    if (bwd === -1) {
+      this.#allocatedHead = fwd;
+    } else {
+      this.#forward[bwd] = fwd;
+    }
 
     if (this.#head === slot) this.#head = fwd;
 
