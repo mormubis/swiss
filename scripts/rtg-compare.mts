@@ -40,7 +40,7 @@ function trfToSwiss(raw: string): TournamentData | undefined {
     for (const result of player.results) {
       const ri = result.round - 1;
       if (!roundArrays[ri]) continue;
-       
+
       if (result.opponentId === null) {
         const byeMap: Record<string, { kind: GameKind; result: 0 | 0.5 | 1 }> =
           {
@@ -86,8 +86,21 @@ function trfToSwiss(raw: string): TournamentData | undefined {
         result: score,
         white: String(player.pairingNumber),
       };
-      if (result.result === '+') game.kind = 'forfeit-win';
-      else if (result.result === '-') game.kind = 'forfeit-loss';
+      if (result.result === '+') {
+        game.kind = 'forfeit-win';
+      } else if (result.result === '-') {
+        // White forfeit-lost. Check if black also forfeit-lost (double forfeit).
+        const opponentResults = tournament.players
+          .find((p) => p.pairingNumber === result.opponentId)
+          ?.results.find((r) => r.round === result.round);
+        if (opponentResults?.result === '-') {
+          // Double forfeit: both get 0, no game was played. Skip entirely
+          // so both players fall into the "no game found" path in
+          // buildPlayerStates (unplayedRounds++, no score, no color).
+          continue;
+        }
+        game.kind = 'forfeit-loss';
+      }
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       roundArrays[ri]!.push(game);
     }
@@ -108,7 +121,7 @@ function extractRoundPairings(raw: string, round: number): [string, string][] {
 
   for (const player of tournament.players) {
     const result = player.results.find((r) => r.round === round);
-     
+
     if (!result || result.opponentId === null) continue;
 
     const key = [String(player.pairingNumber), String(result.opponentId)]
@@ -125,6 +138,30 @@ function extractRoundPairings(raw: string, round: number): [string, string][] {
   }
 
   return pairs;
+}
+
+/**
+ * Extract players that are absent for a given round (H, F, Z byes).
+ * These players should be excluded from the pairing input.
+ */
+function extractAbsentPlayers(raw: string, round: number): Set<string> {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const tournament = parse(raw)!;
+  const absent = new Set<string>();
+  for (const player of tournament.players) {
+    const result = player.results.find((r) => r.round === round);
+    // Non-pairing byes: H (half), F (full), Z (zero). These are pre-assigned
+    // absences — bbpPairings excludes these players from the pairing.
+    // U (pairing-bye) is assigned BY the pairing algorithm, not pre-assigned.
+    if (
+      result &&
+      result.opponentId === null &&
+      (result.result === 'H' || result.result === 'F' || result.result === 'Z')
+    ) {
+      absent.add(String(player.pairingNumber));
+    }
+  }
+  return absent;
 }
 
 // --- Main ---
@@ -177,9 +214,16 @@ for (let seed = 1; seed <= N; seed++) {
     const expectedPairs = extractRoundPairings(raw, round);
     if (expectedPairs.length === 0) continue;
 
+    // Exclude players with non-pairing byes (H, F, Z) for this round.
+    const absentIds = extractAbsentPlayers(raw, round);
+    const roundPlayers =
+      absentIds.size > 0
+        ? data.players.filter((p) => !absentIds.has(p.id))
+        : data.players;
+
     let result;
     try {
-      result = pair(data.players, priorGames, {
+      result = pair(roundPlayers, priorGames, {
         expectedRounds: data.totalRounds,
       });
     } catch (error: unknown) {
