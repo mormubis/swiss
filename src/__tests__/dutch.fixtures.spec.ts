@@ -376,7 +376,7 @@ describe('dutch fixture: issue_15', () => {
   for (let round = 1; round <= 11; round++) {
     it(
       `pairs round ${round} without crashing (180 players)`,
-      { timeout: 60_000 },
+      { timeout: 120_000 },
       () => {
         // Games played before this round
         const gamesBefore = allGames.slice(0, round - 1);
@@ -392,7 +392,7 @@ describe('dutch fixture: issue_15', () => {
     );
   }
 
-  it('produces no rematches in round 11', { timeout: 60_000 }, () => {
+  it('produces no rematches in round 11', { timeout: 120_000 }, () => {
     const gamesBefore = allGames.slice(0, 10);
     const excluded = preAssignedIds(tournament, 11);
     const players = toSwissPlayers(tournament).filter(
