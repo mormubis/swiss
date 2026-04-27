@@ -46,6 +46,8 @@ pnpm run build          # bundle TypeScript → dist/ via tsdown
 pnpm run test                          # run all tests once
 pnpm run test:watch                    # watch mode
 pnpm run test:coverage                 # with coverage report
+pnpm run test:fide                     # RTG comparison vs bbpPairings (50 tournaments)
+pnpm run test:fide 200                 # RTG comparison with custom count
 
 # Run a single test file
 pnpm run test src/__tests__/index.spec.ts
@@ -53,6 +55,11 @@ pnpm run test src/__tests__/index.spec.ts
 # Run a single test by name (substring match)
 pnpm run test -- --reporter=verbose -t "dutch"
 ```
+
+> **Note:** `test:fide` requires bbpPairings built at
+> `/tmp/bbpPairings/build/bbpPairings.exe`. It generates random tournaments with
+> bbpPairings' RTG, then compares our round-by-round pairings against what
+> bbpPairings produced.
 
 ### Lint & Format
 
@@ -101,6 +108,42 @@ pnpm lint && pnpm test && pnpm build
   field. The next round to pair is `games.length + 1`.
 - All interface fields sorted alphabetically (`sort-keys` is an ESLint error).
 - Always use `.js` extensions on relative imports (NodeNext resolution).
+
+---
+
+## Trace System
+
+All `pair()` functions accept an optional third parameter
+`options?: PairOptions` with a `trace` callback for structured observability:
+
+```ts
+import { pair } from '@echecs/swiss/dutch';
+import type { TraceEvent } from '@echecs/swiss/dutch';
+
+const events: TraceEvent[] = [];
+const result = pair(players, games, { trace: (e) => events.push(e) });
+
+// filter by layer
+const blossomEvents = events.filter((e) => e.type.startsWith('blossom:'));
+const dutchEvents = events.filter(
+  (e) => e.type.startsWith('dutch:') || e.type.startsWith('pairing:'),
+);
+```
+
+### Event types
+
+**Blossom layer** (`blossom:*`): `stage-start`, `augmenting-path`, `formed`,
+`expanded`, `dual-update`, `delta`, `complete`.
+
+**Pairing layer** (`pairing:*`): `score-groups`, `bye-assigned`,
+`blossom-invoked`, `blossom-result`, `edge-weights`, `pair-finalized`,
+`color-allocated`.
+
+**Dutch-specific** (`dutch:*`): `bracket-enter`, `mdp-selected`, `weight-boost`,
+`fallback`.
+
+When no callback is provided, zero overhead — no event objects are constructed.
+The trace does not affect pairing results.
 
 ---
 

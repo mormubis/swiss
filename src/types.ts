@@ -46,3 +46,5 @@ export type {
   Player,
   Result,
 };
+
+export type { PairOptions, TraceCallback, TraceEvent } from './trace.js';

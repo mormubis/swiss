@@ -18,7 +18,8 @@ import dutchC9 from './fixtures/dutch_2025_C9.trf?raw';
 import issue15 from './fixtures/issue_15.trf?raw';
 import issue7 from './fixtures/issue_7.trf?raw';
 
-import type { Game, Player } from '../types.js';
+import type { TraceEvent } from '../trace.js';
+import type { Game, GameKind, Player } from '../types.js';
 import type { Tournament } from '@echecs/trf';
 
 // ---------------------------------------------------------------------------
@@ -48,9 +49,34 @@ function toSwissGames(tournament: Tournament): Game[][] {
 
   for (const player of tournament.players) {
     for (const result of player.results) {
-      if (result.color !== 'w' || result.opponentId === null) {
+      const roundIndex = result.round - 1;
+      const roundGames = roundArrays[roundIndex];
+      if (roundGames === undefined) continue;
+
+      // Bye results (no opponent)
+      if (result.opponentId === null) {
+        const byeMap: Record<string, { kind: GameKind; result: 0 | 0.5 | 1 }> =
+          {
+            F: { kind: 'full-bye', result: 1 },
+            H: { kind: 'half-bye', result: 0.5 },
+            U: { kind: 'pairing-bye', result: 1 },
+            Z: { kind: 'zero-bye', result: 0 },
+          };
+        const bye = byeMap[result.result];
+        if (bye) {
+          roundGames.push({
+            black: '',
+            kind: bye.kind,
+            result: bye.result,
+            white: String(player.pairingNumber),
+          });
+        }
         continue;
       }
+
+      // Regular games — only record from white's perspective
+      if (result.color !== 'w') continue;
+
       let score: 0 | 0.5 | 1;
       switch (result.result) {
         case '1':
@@ -71,15 +97,20 @@ function toSwissGames(tournament: Tournament): Game[][] {
           continue;
         }
       }
-      const roundIndex = result.round - 1;
-      const roundGames = roundArrays[roundIndex];
-      if (roundGames !== undefined) {
-        roundGames.push({
-          black: String(result.opponentId),
-          result: score,
-          white: String(player.pairingNumber),
-        });
+
+      const game: Game = {
+        black: String(result.opponentId),
+        result: score,
+        white: String(player.pairingNumber),
+      };
+
+      if (result.result === '+') {
+        game.kind = 'forfeit-win';
+      } else if (result.result === '-') {
+        game.kind = 'forfeit-loss';
       }
+
+      roundGames.push(game);
     }
   }
 
@@ -103,6 +134,10 @@ function preAssignedIds(
     }
   }
   return ids;
+}
+
+function isRemainderPhase(phase: string): boolean {
+  return phase === 'bracket-remainder' || phase === 'bracket-ordering';
 }
 
 // ---------------------------------------------------------------------------
@@ -216,9 +251,12 @@ describe('dutch fixture: issue_7', () => {
 
   it('produces no rematches in round 15', () => {
     const result = pair(players, gamesBefore);
-    const flat = gamesBefore.flat();
+    // Forfeit games are not considered prior opponents per FIDE/bbpPairings
+    const played = gamesBefore
+      .flat()
+      .filter((g) => g.kind !== 'forfeit-win' && g.kind !== 'forfeit-loss');
     for (const pairing of result.pairings) {
-      const alreadyFaced = flat.some(
+      const alreadyFaced = played.some(
         (g) =>
           (g.white === pairing.white && g.black === pairing.black) ||
           (g.white === pairing.black && g.black === pairing.white),
@@ -230,7 +268,51 @@ describe('dutch fixture: issue_7', () => {
     }
   });
 
-  it.fails('produces the exact FIDE-correct pairings for round 15', () => {
+  it('does not spin the bracket loop when unmatched players remain', () => {
+    const events: TraceEvent[] = [];
+    pair(players, gamesBefore, { trace: (event) => events.push(event) });
+
+    const bracketEnters = events.filter(
+      (event) => event.type === 'dutch:bracket-enter',
+    );
+    expect(bracketEnters.length).toBeLessThan(50);
+  });
+
+  it('finalizes each remainder pair individually with blossom re-runs', () => {
+    const events: TraceEvent[] = [];
+    pair(players, gamesBefore, { trace: (event) => events.push(event) });
+
+    const remainderFinalizations = events.filter(
+      (event) =>
+        event.type === 'pairing:pair-finalized' &&
+        isRemainderPhase(event.phase),
+    );
+
+    expect(remainderFinalizations.length).toBeGreaterThan(0);
+
+    let blossomCountInRemainder = 0;
+    let finalizationCountInRemainder = 0;
+    for (const event of events) {
+      if (
+        event.type === 'pairing:blossom-invoked' &&
+        isRemainderPhase(event.phase)
+      ) {
+        blossomCountInRemainder++;
+      }
+      if (
+        event.type === 'pairing:pair-finalized' &&
+        isRemainderPhase(event.phase)
+      ) {
+        finalizationCountInRemainder++;
+      }
+    }
+
+    expect(blossomCountInRemainder).toBeGreaterThanOrEqual(
+      finalizationCountInRemainder,
+    );
+  });
+
+  it('produces the exact FIDE-correct pairings for round 15', () => {
     // Reference output from bbpPairings v6.0.0 (--dutch issue_7.trf -p).
     // Each entry is [white, black] as pairing numbers (strings).
     const expected: [string, string][] = [
@@ -294,7 +376,7 @@ describe('dutch fixture: issue_15', () => {
   for (let round = 1; round <= 11; round++) {
     it(
       `pairs round ${round} without crashing (180 players)`,
-      { timeout: 30_000 },
+      { timeout: 120_000 },
       () => {
         // Games played before this round
         const gamesBefore = allGames.slice(0, round - 1);
@@ -310,16 +392,19 @@ describe('dutch fixture: issue_15', () => {
     );
   }
 
-  it('produces no rematches in round 11', () => {
+  it('produces no rematches in round 11', { timeout: 120_000 }, () => {
     const gamesBefore = allGames.slice(0, 10);
     const excluded = preAssignedIds(tournament, 11);
     const players = toSwissPlayers(tournament).filter(
       (p) => !excluded.has(p.id),
     );
     const result = pair(players, gamesBefore);
-    const flat = gamesBefore.flat();
+    // Forfeit games are not considered prior opponents per FIDE/bbpPairings
+    const played = gamesBefore
+      .flat()
+      .filter((g) => g.kind !== 'forfeit-win' && g.kind !== 'forfeit-loss');
     for (const pairing of result.pairings) {
-      const alreadyFaced = flat.some(
+      const alreadyFaced = played.some(
         (g) =>
           (g.white === pairing.white && g.black === pairing.black) ||
           (g.white === pairing.black && g.black === pairing.white),

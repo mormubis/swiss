@@ -5,6 +5,7 @@ import {
 } from './lexicographic.js';
 import { buildPlayerStates, matchColorHistory } from './utilities.js';
 
+import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
 import type { PlayerState } from './utilities.js';
 
@@ -97,20 +98,56 @@ function makeAllocateDoubleColors(
  * Each round is a two-game match between the same opponents.
  * PAB (bye) awards 1.5 points.
  */
-function pair(players: Player[], games: Game[][]): PairingResult {
+function pair(
+  players: Player[],
+  games: Game[][],
+  options?: PairOptions,
+): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
+
+  const trace = options?.trace;
 
   const states = buildPlayerStates(players, games);
   const ranked = rankByScoreThenTPN(states);
   const byeState = assignLexicographicBye(ranked);
 
-  const toBePaired = ranked.filter((s) => s.id !== byeState?.id);
+  const byeId = byeState?.id;
+
+  if (trace && byeId !== undefined) {
+    trace({
+      playerId: byeId,
+      reason: 'lowest-score-no-prior-bye',
+      system: 'double-swiss',
+      type: 'pairing:bye-assigned',
+    });
+  }
+
+  const toBePaired = ranked.filter((s) => s.id !== byeId);
   const pairings = pairAllBrackets(toBePaired, makeAllocateDoubleColors(games));
 
+  if (trace) {
+    for (const p of pairings) {
+      trace({
+        phase: 'main',
+        playerA: p.white,
+        playerB: p.black,
+        system: 'double-swiss',
+        type: 'pairing:pair-finalized',
+      });
+      trace({
+        black: p.black,
+        rule: 'double-swiss-article-4.3',
+        system: 'double-swiss',
+        type: 'pairing:color-allocated',
+        white: p.white,
+      });
+    }
+  }
+
   return {
-    byes: byeState === undefined ? [] : [{ player: byeState.id }],
+    byes: byeId === undefined ? [] : [{ player: byeId }],
     pairings,
   };
 }

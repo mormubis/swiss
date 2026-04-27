@@ -22,10 +22,16 @@
  */
 
 import { maxWeightMatching } from './blossom.js';
-import { allocateColor, assignBye, buildPlayerStates } from './utilities.js';
+import {
+  allocateColor,
+  assignBye,
+  buildPlayerStates,
+  scoreGroups,
+} from './utilities.js';
 import { buildEdgeWeight } from './weights.js';
 
 import type { DynamicUint } from './dynamic-uint.js';
+import type { PairOptions, TraceCallback } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
 import type { ColorRule, PlayerState } from './utilities.js';
 import type { BracketContext, Criterion } from './weights.js';
@@ -348,9 +354,19 @@ function runBlossom(
   players: PlayerState[],
   edges: [number, number, DynamicUint][],
   maxcardinality = true,
+  trace?: TraceCallback,
 ): Map<string, string> {
   if (players.length === 0) return new Map();
-  const matching = maxWeightMatching(edges, maxcardinality);
+  if (trace) {
+    trace({
+      edgeCount: edges.length,
+      phase: 'main',
+      system: 'burstein',
+      type: 'pairing:blossom-invoked',
+      vertexCount: players.length,
+    });
+  }
+  const matching = maxWeightMatching(edges, maxcardinality, trace);
   const result = new Map<string, string>();
   for (const [index, index_] of matching.entries()) {
     if (index_ !== undefined && index_ !== -1 && index_ > index) {
@@ -361,6 +377,19 @@ function runBlossom(
       result.set(b.id, a.id);
     }
   }
+  if (trace) {
+    const pairs: [string, string][] = [];
+    for (const [a, b] of result) {
+      if (a < b) pairs.push([a, b]);
+    }
+    trace({
+      pairs,
+      phase: 'main',
+      system: 'burstein',
+      type: 'pairing:blossom-result',
+      unmatchedCount: players.length - pairs.length * 2,
+    });
+  }
   return result;
 }
 
@@ -368,10 +397,16 @@ function runBlossom(
 // Main pair function
 // ---------------------------------------------------------------------------
 
-function pair(players: Player[], games: Game[][]): PairingResult {
+function pair(
+  players: Player[],
+  games: Game[][],
+  options?: PairOptions,
+): PairingResult {
   if (players.length < 2) {
     throw new RangeError('at least 2 players are required');
   }
+
+  const trace = options?.trace;
 
   const totalRounds = games.length + 1;
 
@@ -435,6 +470,15 @@ function pair(players: Player[], games: Game[][]): PairingResult {
 
   const byeId = byeState?.id;
 
+  if (trace && byeId !== undefined) {
+    trace({
+      playerId: byeId,
+      reason: 'lowest-score-no-prior-bye',
+      system: 'burstein',
+      type: 'pairing:bye-assigned',
+    });
+  }
+
   // Remove bye recipient from the pairing pool
   const pairedPool =
     byeId === undefined ? sorted : sorted.filter((s) => s.id !== byeId);
@@ -462,8 +506,17 @@ function pair(players: Player[], games: Game[][]): PairingResult {
     },
   };
 
+  if (trace) {
+    const sgMap = scoreGroups(pairedPool);
+    const groups: { playerIds: string[]; score: number }[] = [];
+    for (const [score, members] of sgMap) {
+      groups.push({ playerIds: members.map((m) => m.id), score });
+    }
+    trace({ groups, system: 'burstein', type: 'pairing:score-groups' });
+  }
+
   const edges = buildEdges(pairedPool, globalContext);
-  const matching = runBlossom(pairedPool, edges, true);
+  const matching = runBlossom(pairedPool, edges, true, trace);
 
   const allPairedTuples: [PlayerState, PlayerState][] = [];
   const seen = new Set<string>();
@@ -478,6 +531,15 @@ function pair(players: Player[], games: Game[][]): PairingResult {
       const b = stateById.get(partnerId);
       if (a === undefined || b === undefined) continue;
       allPairedTuples.push(a.tpn < b.tpn ? [a, b] : [b, a]);
+      if (trace) {
+        trace({
+          phase: 'main',
+          playerA: a.id,
+          playerB: b.id,
+          system: 'burstein',
+          type: 'pairing:pair-finalized',
+        });
+      }
     }
   }
 
@@ -492,6 +554,18 @@ function pair(players: Player[], games: Game[][]): PairingResult {
   const pairings = allPairedTuples.map(([a, b]) =>
     allocateColor(a, b, BURSTEIN_COLOR_RULES, rankCompare),
   );
+
+  if (trace) {
+    for (const p of pairings) {
+      trace({
+        black: p.black,
+        rule: 'burstein-article-5.2',
+        system: 'burstein',
+        type: 'pairing:color-allocated',
+        white: p.white,
+      });
+    }
+  }
 
   return {
     byes: byeId === undefined ? [] : [{ player: byeId }],

@@ -49,8 +49,14 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
   for (const round of games) {
     cumulativeScore.push(new Map(runningScoreMap));
     for (const game of round) {
-      // Skip byes (black === '')
-      if (game.black === '') continue;
+      if (game.black === '') {
+        // Bye: only white receives points
+        runningScoreMap.set(
+          game.white,
+          (runningScoreMap.get(game.white) ?? 0) + game.result,
+        );
+        continue;
+      }
       runningScoreMap.set(
         game.white,
         (runningScoreMap.get(game.white) ?? 0) + game.result,
@@ -86,6 +92,7 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
       // Bye sentinel: black === ''
       if (game.black === '') {
         byeCount++;
+        score += game.result;
         colorHistory.push(undefined);
         floatHistory.push('down');
         continue;
@@ -93,22 +100,52 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
 
       // Real game
       const isWhite = game.white === id;
-      colorHistory.push(isWhite ? 'white' : 'black');
+
+      // Forfeit — game was not actually played, no color recorded
+      // (matches bbpPairings: gameWasPlayed = false for +/- results)
+      const isForfeit =
+        game.kind === 'forfeit-win' || game.kind === 'forfeit-loss';
+      colorHistory.push(isForfeit ? undefined : isWhite ? 'white' : 'black');
+
       score += isWhite ? game.result : 1 - game.result;
-      opponents.add(isWhite ? game.black : game.white);
 
-      // Float status: compare scores before this round
-      const opponentId = isWhite ? game.black : game.white;
-      const scoresBeforeRound = cumulativeScore[roundIndex];
-      const playerScoreBefore = scoresBeforeRound?.get(id) ?? 0;
-      const opponentScoreBefore = scoresBeforeRound?.get(opponentId) ?? 0;
-
-      if (playerScoreBefore > opponentScoreBefore) {
-        floatHistory.push('down');
-      } else if (playerScoreBefore < opponentScoreBefore) {
-        floatHistory.push('up');
+      // Forfeit — game was not actually played, opponent not recorded
+      // (matches bbpPairings: forbiddenPairs only added when gameWasPlayed)
+      if (isForfeit) {
+        // Forfeit counts as unplayed (C++ playedGames only increments for
+        // gameWasPlayed=true; our unplayedRounds is the inverse).
+        unplayedRounds++;
+        // C++ eligibleForBye returns false when any unplayed match gives
+        // points >= pointsForWin. A forfeit win gives 1 point = full win.
+        const pointsFromForfeit = isWhite ? game.result : 1 - game.result;
+        if (pointsFromForfeit >= 1) {
+          byeCount++;
+        }
       } else {
-        floatHistory.push(undefined);
+        opponents.add(isWhite ? game.black : game.white);
+      }
+
+      // Float status
+      // Forfeit: bbpPairings treats unplayed games specially —
+      // forfeit win (points > loss) = FLOAT_DOWN, otherwise FLOAT_NONE.
+      if (isForfeit) {
+        const wonForfeit =
+          (isWhite && game.kind === 'forfeit-win') ||
+          (!isWhite && game.kind === 'forfeit-loss');
+        floatHistory.push(wonForfeit ? 'down' : undefined);
+      } else {
+        const opponentId = isWhite ? game.black : game.white;
+        const scoresBeforeRound = cumulativeScore[roundIndex];
+        const playerScoreBefore = scoresBeforeRound?.get(id) ?? 0;
+        const opponentScoreBefore = scoresBeforeRound?.get(opponentId) ?? 0;
+
+        if (playerScoreBefore > opponentScoreBefore) {
+          floatHistory.push('down');
+        } else if (playerScoreBefore < opponentScoreBefore) {
+          floatHistory.push('up');
+        } else {
+          floatHistory.push(undefined);
+        }
       }
     }
 

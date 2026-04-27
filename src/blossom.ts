@@ -80,9 +80,12 @@
 
 import { DynamicUint } from './dynamic-uint.js';
 
+import type { TraceCallback } from './trace.js';
+
 function maxWeightMatching(
   edges: [number, number, DynamicUint][],
   maxCardinality = false,
+  trace?: TraceCallback,
 ): number[] {
   if (edges.length === 0) return [];
 
@@ -416,6 +419,14 @@ function maxWeightMatching(
       )
         bestEdge[newBlossom] = candidateEdge;
     }
+    if (trace) {
+      trace({
+        base,
+        blossomIndex: newBlossom,
+        childCount: blossomChildren[newBlossom]!.length,
+        type: 'blossom:formed',
+      });
+    }
   }
 
   /**
@@ -436,6 +447,14 @@ function maxWeightMatching(
    *    flipping of endpoint indices.
    */
   function expandBlossom(blossom: number, endstage: boolean): void {
+    if (trace) {
+      trace({
+        blossomIndex: blossom,
+        childCount: blossomChildren[blossom]!.length,
+        endstage,
+        type: 'blossom:expanded',
+      });
+    }
     for (const child of blossomChildren[blossom]!) {
       blossomParent[child] = -1;
       if (child < vertexCount) vertexTopBlossom[child] = child;
@@ -607,6 +626,13 @@ function maxWeightMatching(
    * After this function, the matching size has increased by one.
    */
   function augmentMatching(edgeIndex: number): void {
+    if (trace) {
+      trace({
+        edgeIndex,
+        type: 'blossom:augmenting-path',
+        vertices: [endpoints[2 * edgeIndex]!, endpoints[2 * edgeIndex + 1]!],
+      });
+    }
     const [vertexU, vertexW] = edges[edgeIndex]!;
     for (const [startVertex, startEndpoint] of [
       [vertexU, 2 * edgeIndex + 1],
@@ -884,6 +910,16 @@ function maxWeightMatching(
       if (match[v] === -1 && labels[vertexTopBlossom[v]!] === 0)
         assignLabel(v, 1, -1);
     let augmented: boolean;
+    if (trace) {
+      let unmatched = 0;
+      for (let v = 0; v < vertexCount; v++) if (match[v] === -1) unmatched++;
+      trace({
+        stage,
+        type: 'blossom:stage-start',
+        unmatchedCount: unmatched,
+        vertexCount,
+      });
+    }
 
     // ── Inner loop: alternate between scanning and dual updates ──
     while (true) {
@@ -891,9 +927,19 @@ function maxWeightMatching(
       if (augmented) break;
 
       const { deltaType, delta, deltaEdge, deltaBlossom } = computeDelta();
+      if (trace && deltaType !== -1) {
+        trace({
+          deltaType,
+          deltaValue: delta.toString(),
+          type: 'blossom:delta',
+        });
+      }
       if (deltaType === -1) break;
 
       applyDualUpdate(delta);
+      if (trace) {
+        trace({ delta: delta.toString(), type: 'blossom:dual-update' });
+      }
       handleDelta(deltaType, deltaEdge, deltaBlossom);
       if (deltaType === 1) break;
     }
@@ -926,6 +972,15 @@ function maxWeightMatching(
   const result: number[] = Array.from({ length: vertexCount }, () => -1);
   for (let v = 0; v < vertexCount; v++)
     if (match[v] !== -1) result[v] = endpoints[match[v]!]!;
+  if (trace) {
+    let matchedCount = 0;
+    for (let v = 0; v < vertexCount; v++) if (result[v] !== -1) matchedCount++;
+    trace({
+      matchedCount: matchedCount / 2,
+      type: 'blossom:complete',
+      vertexCount,
+    });
+  }
   return result;
 }
 
