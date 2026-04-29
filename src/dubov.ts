@@ -17,7 +17,7 @@
  * 6. Assign bye (odd player count) via `assignBye`.
  */
 
-import { maxWeightMatching } from './blossom.js';
+import { buildBlossomEdges, runBlossom } from './pairing-helpers.js';
 import {
   FIDE_COLOR_RULES,
   ROUND_1_COLOR_RULE,
@@ -26,10 +26,8 @@ import {
   buildPlayerStates,
   scoreGroups,
 } from './utilities.js';
-import { buildEdgeWeight } from './weights.js';
 
-import type { DynamicUint } from './dynamic-uint.js';
-import type { PairOptions, TraceCallback } from './trace.js';
+import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
 import type { PlayerState } from './utilities.js';
 import type { BracketContext, Criterion } from './weights.js';
@@ -253,72 +251,6 @@ const DUBOV_CRITERIA: Criterion[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Edge-building helpers
-// ---------------------------------------------------------------------------
-
-function buildEdges(
-  players: PlayerState[],
-  context: DubovContext,
-): [number, number, DynamicUint][] {
-  const edges: [number, number, DynamicUint][] = [];
-  for (let index = 0; index < players.length; index++) {
-    for (let index_ = index + 1; index_ < players.length; index_++) {
-      const a = players.at(index);
-      const b = players.at(index_);
-      if (a === undefined || b === undefined) continue;
-      const weight = buildEdgeWeight(DUBOV_CRITERIA, a, b, context);
-      if (!weight.isZero()) {
-        edges.push([index, index_, weight]);
-      }
-    }
-  }
-  return edges;
-}
-
-function runBlossom(
-  players: PlayerState[],
-  edges: [number, number, DynamicUint][],
-  maxcardinality = true,
-  trace?: TraceCallback,
-): Map<string, string> {
-  if (players.length === 0) return new Map();
-  if (trace) {
-    trace({
-      edgeCount: edges.length,
-      phase: 'main',
-      system: 'dubov',
-      type: 'pairing:blossom-invoked',
-      vertexCount: players.length,
-    });
-  }
-  const matching = maxWeightMatching(edges, maxcardinality, trace);
-  const result = new Map<string, string>();
-  for (const [index, index_] of matching.entries()) {
-    if (index_ !== undefined && index_ !== -1 && index_ > index) {
-      const a = players.at(index);
-      const b = players.at(index_);
-      if (a === undefined || b === undefined) continue;
-      result.set(a.id, b.id);
-      result.set(b.id, a.id);
-    }
-  }
-  if (trace) {
-    const pairs: [string, string][] = [];
-    for (const [a, b] of result) {
-      if (a < b) pairs.push([a, b]);
-    }
-    trace({
-      pairs,
-      phase: 'main',
-      system: 'dubov',
-      type: 'pairing:blossom-result',
-      unmatchedCount: players.length - pairs.length * 2,
-    });
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
 // Main pair function
 // ---------------------------------------------------------------------------
 
@@ -433,8 +365,8 @@ function pair(
     trace({ groups, system: 'dubov', type: 'pairing:score-groups' });
   }
 
-  const edges = buildEdges(pairedPool, globalContext);
-  const matching = runBlossom(pairedPool, edges, true, trace);
+  const edges = buildBlossomEdges(pairedPool, DUBOV_CRITERIA, globalContext);
+  const matching = runBlossom(pairedPool, edges, 'dubov', true, trace);
 
   const allPairedTuples: [PlayerState, PlayerState][] = [];
   const seen = new Set<string>();

@@ -430,6 +430,20 @@ const FIDE_COLOR_RULES: ColorRule[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Game normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalise games so that the old `black === white` bye sentinel is converted
+ * to the canonical `black === ''` sentinel expected by buildPlayerStates.
+ */
+function normaliseGames(games: Game[][]): Game[][] {
+  return games.map((round) =>
+    round.map((g) => (g.black === g.white ? { ...g, black: '' } : g)),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Legacy API — kept for backward compatibility with modules not yet migrated
 // to the PlayerState-based API. These will be removed in tasks 5–11.
 // ---------------------------------------------------------------------------
@@ -720,6 +734,7 @@ export {
   isTopscorer,
   matchColorHistory,
   matchCount,
+  normaliseGames,
   playerScoreGroups,
   rankPlayers,
   ROUND_1_COLOR_RULE,
