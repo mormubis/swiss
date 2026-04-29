@@ -23,6 +23,8 @@
 
 import { maxWeightMatching } from './blossom.js';
 import {
+  FIDE_COLOR_RULES,
+  ROUND_1_COLOR_RULE,
   allocateColor,
   assignBye,
   buildPlayerStates,
@@ -33,7 +35,7 @@ import { buildEdgeWeight } from './weights.js';
 import type { DynamicUint } from './dynamic-uint.js';
 import type { PairOptions, TraceCallback } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
-import type { ColorRule, PlayerState } from './utilities.js';
+import type { PlayerState } from './utilities.js';
 import type { BracketContext, Criterion } from './weights.js';
 
 // ---------------------------------------------------------------------------
@@ -106,82 +108,7 @@ function computeSonnebornBerger(
 // FIDE Article 5 colour rules
 // ---------------------------------------------------------------------------
 
-function rankPreference(s: PlayerState['preferenceStrength']): number {
-  if (s === 'absolute') return 3;
-  if (s === 'strong') return 2;
-  if (s === 'mild') return 1;
-  return 0;
-}
-
-const BURSTEIN_COLOR_RULES: ColorRule[] = [
-  // 5.2.1 (round 1): Both players have no history — higher ranked gets initial colour
-  // If odd TPN → white (initial colour); even TPN → black.
-  (hrp, opp) => {
-    const hrpHasHistory = hrp.colorHistory.some((c) => c !== undefined);
-    const oppHasHistory = opp.colorHistory.some((c) => c !== undefined);
-    if (!hrpHasHistory && !oppHasHistory) {
-      return hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  // 5.2.2 Grant both colour preferences (if they differ)
-  (hrp, opp) => {
-    if (
-      hrp.preferredColor !== undefined &&
-      opp.preferredColor !== undefined &&
-      hrp.preferredColor !== opp.preferredColor
-    ) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  // 5.2.3 Grant stronger preference; both absolute → wider colorDiff wins
-  (hrp, opp) => {
-    const hrpS = rankPreference(hrp.preferenceStrength);
-    const oppS = rankPreference(opp.preferenceStrength);
-
-    if (hrpS > oppS && hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    if (oppS > hrpS && opp.preferredColor !== undefined) {
-      return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-    }
-    // Both absolute: wider colorDiff wins
-    if (hrpS === 3 && oppS === 3) {
-      const hrpAbs = Math.abs(hrp.colorDiff);
-      const oppAbs = Math.abs(opp.colorDiff);
-      if (hrpAbs > oppAbs && hrp.preferredColor !== undefined) {
-        return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-      }
-      if (oppAbs > hrpAbs && opp.preferredColor !== undefined) {
-        return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  // 5.2.4 Alternate from most recent divergent round
-  (hrp, opp) => {
-    const minLength = Math.min(
-      hrp.colorHistory.length,
-      opp.colorHistory.length,
-    );
-    for (let index = minLength - 1; index >= 0; index--) {
-      const h = hrp.colorHistory[index];
-      const o = opp.colorHistory[index];
-      if (h !== undefined && o !== undefined && h !== o) {
-        return h === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  // 5.2.5 Grant the colour preference of the higher ranked player (HRP)
-  (hrp) => {
-    if (hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-];
+const BURSTEIN_COLOR_RULES = [ROUND_1_COLOR_RULE, ...FIDE_COLOR_RULES];
 
 // ---------------------------------------------------------------------------
 // Burstein ranking comparator

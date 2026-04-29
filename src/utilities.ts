@@ -319,6 +319,117 @@ function allocateColor(
 }
 
 // ---------------------------------------------------------------------------
+// FIDE Article 5.2 — shared colour rules
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps preference strength to a numeric rank for comparison in rule 5.2.2.
+ */
+function rankPreference(s: PlayerState['preferenceStrength']): number {
+  if (s === 'absolute') return 3;
+  if (s === 'strong') return 2;
+  if (s === 'mild') return 1;
+  return 0;
+}
+
+/**
+ * Round-1 guard rule for systems whose spec defines Article 5.2.1 as:
+ * "When both players have yet to play a game, if the higher ranked player
+ * has an odd TPN, give them the initial-colour; otherwise the opposite."
+ *
+ * Used by Dubov (C.04.4.1) and Burstein (C.04.4.2). Dutch and Lim do not
+ * need this — their fallback (5.2.5) handles round 1 implicitly.
+ */
+const ROUND_1_COLOR_RULE: ColorRule = (hrp, opp) => {
+  const hrpHasHistory = hrp.colorHistory.some((c) => c !== undefined);
+  const oppHasHistory = opp.colorHistory.some((c) => c !== undefined);
+  if (!hrpHasHistory && !oppHasHistory) {
+    return hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black';
+  }
+  return 'continue';
+};
+
+/**
+ * Common FIDE Article 5.2 colour rules shared by all blossom-based pairing
+ * systems (Dutch, Dubov, Burstein, Lim).
+ *
+ * 5.2.1  Grant both colour preferences (if they differ).
+ * 5.2.2  Grant the stronger preference; both absolute → wider colorDiff wins.
+ * 5.2.3  Alternate from the most recent round where colours diverged.
+ * 5.2.4  Grant the HRP's colour preference.
+ * 5.2.5  Odd TPN → initial colour (white).
+ *
+ * Dubov and Burstein prepend ROUND_1_COLOR_RULE before these rules.
+ */
+// 5.2.1 Grant both colour preferences
+const grantBothPreferences: ColorRule = (hrp, opp) => {
+  if (
+    hrp.preferredColor !== undefined &&
+    opp.preferredColor !== undefined &&
+    hrp.preferredColor !== opp.preferredColor
+  ) {
+    return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
+  }
+  return 'continue';
+};
+
+// 5.2.2 Grant stronger preference; both absolute → wider colorDiff wins
+const grantStrongerPreference: ColorRule = (hrp, opp) => {
+  const hrpS = rankPreference(hrp.preferenceStrength);
+  const oppS = rankPreference(opp.preferenceStrength);
+  if (hrpS > oppS && hrp.preferredColor !== undefined) {
+    return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
+  }
+  if (oppS > hrpS && opp.preferredColor !== undefined) {
+    return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
+  }
+  if (hrpS === 3 && oppS === 3) {
+    const hrpAbs = Math.abs(hrp.colorDiff);
+    const oppAbs = Math.abs(opp.colorDiff);
+    if (hrpAbs > oppAbs && hrp.preferredColor !== undefined) {
+      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
+    }
+    if (oppAbs > hrpAbs && opp.preferredColor !== undefined) {
+      return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
+    }
+  }
+  return 'continue';
+};
+
+// 5.2.3 Alternate from the most recent divergent round
+const alternateFromDivergentRound: ColorRule = (hrp, opp) => {
+  const minLength = Math.min(hrp.colorHistory.length, opp.colorHistory.length);
+  for (let index = minLength - 1; index >= 0; index--) {
+    const h = hrp.colorHistory[index];
+    const o = opp.colorHistory[index];
+    if (h !== undefined && o !== undefined && h !== o) {
+      return h === 'white' ? 'hrp-black' : 'hrp-white';
+    }
+  }
+  return 'continue';
+};
+
+// 5.2.4 Grant the HRP's preference
+const grantHrpPreference: ColorRule = (hrp) => {
+  if (hrp.preferredColor !== undefined) {
+    return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
+  }
+  return 'continue';
+};
+
+// 5.2.5 Odd TPN → initial colour (white)
+const tpnFallback: ColorRule = (hrp) =>
+  hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black';
+
+const FIDE_COLOR_RULES: ColorRule[] = [
+  grantBothPreferences,
+  grantStrongerPreference,
+  alternateFromDivergentRound,
+  grantHrpPreference,
+  tpnFallback,
+];
+
+// ---------------------------------------------------------------------------
 // Legacy API — kept for backward compatibility with modules not yet migrated
 // to the PlayerState-based API. These will be removed in tasks 5–11.
 // ---------------------------------------------------------------------------
@@ -602,6 +713,7 @@ export {
   byeScore,
   colorHistory,
   colorPreference,
+  FIDE_COLOR_RULES,
   floatHistory,
   gamesForPlayer,
   hasFaced,
@@ -610,6 +722,7 @@ export {
   matchCount,
   playerScoreGroups,
   rankPlayers,
+  ROUND_1_COLOR_RULE,
   score,
   scoreGroups,
   typeAColorPreference,
