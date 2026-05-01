@@ -1,25 +1,34 @@
 # Changelog
 
+## [3.1.0] - 2026-05-01
+
+### Added
+
+- structured trace system for pairing algorithm observability
+  (`PairOptions.trace`, `TraceEvent` types) with events across blossom, pairing,
+  and dutch layers.
+- `@echecs/tournament` as a peer dependency — shared types (`Game`, `Player`,
+  `Pairing`, `Bye`, `PairingResult`, `Result`, `GameKind`) are now re-exported
+  from tournament instead of defined locally.
+
+### Changed
+
+- rewrote Dutch pairing system to implement full FIDE C.04.3 (2026 edition) with
+  all 21 criteria, bracket-by-bracket blossom matching, MDP selection, and
+  remainder phase.
+- consolidated FIDE Article 5.2 colour rules into shared `FIDE_COLOR_RULES` and
+  `ROUND_1_COLOR_RULE` in `utilities.ts` — removes ~220 lines of duplication
+  across Dutch, Dubov, Burstein, and Lim.
+- extracted shared `buildBlossomEdges`, `runBlossom`, and `normaliseGames` into
+  `pairing-helpers.ts` and `utilities.ts`.
+- `const enum Label` changed to `enum Label` for rolldown/tsdown compatibility.
+
 ## [3.0.3] - 2026-04-17
 
 ### Fixed
 
 - Added top-level `types` field to `package.json` for TypeScript configs that
   don't resolve types through `exports` conditions.
-
-## [Unreleased]
-
-### Changed
-
-- rewrote Dutch pairing system to implement full FIDE C.04.3 (2026 edition) with
-  all 21 criteria, replacing the simplified blossom-weighted approach
-- player array order now determines Tournament Pairing Number (TPN) for Dutch
-  pairings
-
-### Removed
-
-- removed internal `blossom.ts` (maximum weight matching no longer used by Dutch
-  system)
 
 ## 3.0.2 — 2026-04-09
 

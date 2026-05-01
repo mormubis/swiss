@@ -5,8 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Swiss** is a TypeScript library for Swiss chess tournament pairing, following
-[FIDE rules](https://handbook.fide.com/chapter/C0401202507). Zero runtime
-dependencies.
+[FIDE rules](https://handbook.fide.com/chapter/C0401202507).
 
 Six FIDE-approved pairing systems are supported via subpath exports: Dutch
 (C.04.3), Dubov (C.04.4.1), Burstein (C.04.4.2), Lim (C.04.4.3), Double-Swiss
