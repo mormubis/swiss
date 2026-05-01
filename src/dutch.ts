@@ -21,77 +21,20 @@
 import { maxWeightMatching } from './blossom.js';
 import { DynamicUint } from './dynamic-uint.js';
 import { MatchingComputer } from './matching-computer.js';
-import { allocateColor, buildPlayerStates, scoreGroups } from './utilities.js';
+import {
+  FIDE_COLOR_RULES,
+  allocateColor,
+  buildPlayerStates,
+  scoreGroups,
+} from './utilities.js';
 
 import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
-import type { ColorRule, PlayerState } from './utilities.js';
+import type { PlayerState } from './utilities.js';
 
 // ---------------------------------------------------------------------------
 // FIDE Article 5.2 colour rules
 // ---------------------------------------------------------------------------
-
-function rankPreference(s: PlayerState['preferenceStrength']): number {
-  if (s === 'absolute') return 3;
-  if (s === 'strong') return 2;
-  if (s === 'mild') return 1;
-  return 0;
-}
-
-const DUTCH_COLOR_RULES: ColorRule[] = [
-  (hrp, opp) => {
-    if (
-      hrp.preferredColor !== undefined &&
-      opp.preferredColor !== undefined &&
-      hrp.preferredColor !== opp.preferredColor
-    ) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  (hrp, opp) => {
-    const hrpS = rankPreference(hrp.preferenceStrength);
-    const oppS = rankPreference(opp.preferenceStrength);
-    if (hrpS > oppS && hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    if (oppS > hrpS && opp.preferredColor !== undefined) {
-      return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-    }
-    if (hrpS === 3 && oppS === 3) {
-      const hrpAbs = Math.abs(hrp.colorDiff);
-      const oppAbs = Math.abs(opp.colorDiff);
-      if (hrpAbs > oppAbs && hrp.preferredColor !== undefined) {
-        return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-      }
-      if (oppAbs > hrpAbs && opp.preferredColor !== undefined) {
-        return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  (hrp, opp) => {
-    const minLength = Math.min(
-      hrp.colorHistory.length,
-      opp.colorHistory.length,
-    );
-    for (let index = minLength - 1; index >= 0; index--) {
-      const h = hrp.colorHistory[index];
-      const o = opp.colorHistory[index];
-      if (h !== undefined && o !== undefined && h !== o) {
-        return h === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  (hrp) => {
-    if (hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  (hrp) => (hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black'),
-];
 
 function dutchRankCompare(a: PlayerState, b: PlayerState): number {
   return a.tpn - b.tpn;
@@ -1743,7 +1686,7 @@ function pair(
   }
 
   const pairings = result.map(([a, b]) =>
-    allocateColor(a, b, DUTCH_COLOR_RULES, dutchRankCompare),
+    allocateColor(a, b, FIDE_COLOR_RULES, dutchRankCompare),
   );
 
   if (trace) {

@@ -23,93 +23,20 @@
  * 6. Allocate colours for every pair via FIDE Article 5.
  */
 
-import { maxWeightMatching } from './blossom.js';
+import { buildBlossomEdges, runBlossom } from './pairing-helpers.js';
 import {
+  FIDE_COLOR_RULES,
   allocateColor,
   assignBye,
   buildPlayerStates,
+  normaliseGames,
   scoreGroups,
 } from './utilities.js';
-import { buildEdgeWeight } from './weights.js';
 
-import type { DynamicUint } from './dynamic-uint.js';
-import type { PairOptions, TraceCallback } from './trace.js';
+import type { PairOptions } from './trace.js';
 import type { Game, PairingResult, Player } from './types.js';
-import type { ColorRule, PlayerState } from './utilities.js';
+import type { PlayerState } from './utilities.js';
 import type { BracketContext, Criterion } from './weights.js';
-
-// ---------------------------------------------------------------------------
-// FIDE Article 5.2 colour rules (same as Dutch)
-// ---------------------------------------------------------------------------
-
-function rankPreference(s: PlayerState['preferenceStrength']): number {
-  if (s === 'absolute') return 3;
-  if (s === 'strong') return 2;
-  if (s === 'mild') return 1;
-  return 0;
-}
-
-const LIM_COLOR_RULES: ColorRule[] = [
-  // 5.2.1 Grant both colour preferences (if they differ)
-  (hrp, opp) => {
-    if (
-      hrp.preferredColor !== undefined &&
-      opp.preferredColor !== undefined &&
-      hrp.preferredColor !== opp.preferredColor
-    ) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  // 5.2.2 Grant stronger preference; both absolute → wider colorDiff wins
-  (hrp, opp) => {
-    const hrpS = rankPreference(hrp.preferenceStrength);
-    const oppS = rankPreference(opp.preferenceStrength);
-
-    if (hrpS > oppS && hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    if (oppS > hrpS && opp.preferredColor !== undefined) {
-      return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-    }
-    // Both absolute: wider colorDiff wins
-    if (hrpS === 3 && oppS === 3) {
-      const hrpAbs = Math.abs(hrp.colorDiff);
-      const oppAbs = Math.abs(opp.colorDiff);
-      if (hrpAbs > oppAbs && hrp.preferredColor !== undefined) {
-        return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-      }
-      if (oppAbs > hrpAbs && opp.preferredColor !== undefined) {
-        return opp.preferredColor === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  // 5.2.3 Alternate from most recent divergent round
-  (hrp, opp) => {
-    const minLength = Math.min(
-      hrp.colorHistory.length,
-      opp.colorHistory.length,
-    );
-    for (let index = minLength - 1; index >= 0; index--) {
-      const h = hrp.colorHistory[index];
-      const o = opp.colorHistory[index];
-      if (h !== undefined && o !== undefined && h !== o) {
-        return h === 'white' ? 'hrp-black' : 'hrp-white';
-      }
-    }
-    return 'continue';
-  },
-  // 5.2.4 Grant HRP's preference
-  (hrp) => {
-    if (hrp.preferredColor !== undefined) {
-      return hrp.preferredColor === 'white' ? 'hrp-white' : 'hrp-black';
-    }
-    return 'continue';
-  },
-  // 5.2.5 Odd TPN → initial colour (white)
-  (hrp) => (hrp.tpn % 2 === 1 ? 'hrp-white' : 'hrp-black'),
-];
 
 // Rank comparator for allocateColor: lower TPN = higher rank
 function limRankCompare(a: PlayerState, b: PlayerState): number {
@@ -330,100 +257,7 @@ const LIM_CRITERIA: Criterion[] = [
       return Math.max(0, 3 - violations);
     },
   },
-];
-
-// ---------------------------------------------------------------------------
-// Edge-building helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build a complete graph for a set of players.
- * Returns [indexA, indexB, weight] tuples for maxWeightMatching.
- * Edges with zero weight (C1 rematches) are omitted so that
- * maxcardinality mode never forces a rematch.
- */
-function buildEdges(
-  players: PlayerState[],
-  context: LimContextFull,
-): [number, number, DynamicUint][] {
-  const edges: [number, number, DynamicUint][] = [];
-  for (let index = 0; index < players.length; index++) {
-    for (let index_ = index + 1; index_ < players.length; index_++) {
-      const a = players.at(index);
-      const b = players.at(index_);
-      if (a === undefined || b === undefined) continue;
-      const weight = buildEdgeWeight(LIM_CRITERIA, a, b, context);
-      if (!weight.isZero()) {
-        edges.push([index, index_, weight]);
-      }
-    }
-  }
-  return edges;
-}
-
-/**
- * Run blossom on edges and return a Map<id, id> of matched pairs.
- */
-function runBlossom(
-  players: PlayerState[],
-  edges: [number, number, DynamicUint][],
-  maxcardinality = true,
-  trace?: TraceCallback,
-): Map<string, string> {
-  if (players.length === 0) return new Map();
-  if (trace) {
-    trace({
-      edgeCount: edges.length,
-      phase: 'main',
-      system: 'lim',
-      type: 'pairing:blossom-invoked',
-      vertexCount: players.length,
-    });
-  }
-  const matching = maxWeightMatching(edges, maxcardinality, trace);
-  const result = new Map<string, string>();
-  for (const [index, index_] of matching.entries()) {
-    if (index_ !== undefined && index_ !== -1 && index_ > index) {
-      const a = players.at(index);
-      const b = players.at(index_);
-      if (a === undefined || b === undefined) continue;
-      result.set(a.id, b.id);
-      result.set(b.id, a.id);
-    }
-  }
-  if (trace) {
-    const pairs: [string, string][] = [];
-    for (const [a, b] of result) {
-      if (a < b) pairs.push([a, b]);
-    }
-    trace({
-      pairs,
-      phase: 'main',
-      system: 'lim',
-      type: 'pairing:blossom-result',
-      unmatchedCount: players.length - pairs.length * 2,
-    });
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Bye sentinel normalisation
-// ---------------------------------------------------------------------------
-
-/**
- * Normalise games so that the old `black === white` bye sentinel is converted
- * to the canonical `black === ''` sentinel expected by buildPlayerStates.
- */
-function normaliseGames(games: Game[][]): Game[][] {
-  return games.map((round) =>
-    round.map((game) =>
-      game.black === game.white ? { ...game, black: '' } : game,
-    ),
-  );
-}
-
-// ---------------------------------------------------------------------------
+]; // ---------------------------------------------------------------------------
 // Main pair function
 // ---------------------------------------------------------------------------
 
@@ -510,8 +344,8 @@ function pair(
     },
   };
 
-  const edges = buildEdges(pairedPool, globalContext);
-  const matching = runBlossom(pairedPool, edges, true, trace);
+  const edges = buildBlossomEdges(pairedPool, LIM_CRITERIA, globalContext);
+  const matching = runBlossom(pairedPool, edges, 'lim', true, trace);
 
   const allPairedTuples: [PlayerState, PlayerState][] = [];
   const seen = new Set<string>();
@@ -542,7 +376,7 @@ function pair(
   // Allocate colours
   // -------------------------------------------------------------------------
   const pairings = allPairedTuples.map(([a, b]) =>
-    allocateColor(a, b, LIM_COLOR_RULES, limRankCompare),
+    allocateColor(a, b, FIDE_COLOR_RULES, limRankCompare),
   );
 
   if (trace) {
