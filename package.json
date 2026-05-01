@@ -3,8 +3,9 @@
   "bugs": {
     "url": "https://github.com/echecsjs/swiss/issues"
   },
-  "description": "Swiss chess tournament pairings following FIDE rules. Implements Dutch, Dubov, Burstein, Lim, Double, and Team Swiss systems. Zero dependencies.",
+  "description": "Swiss chess tournament pairings following FIDE rules. Implements Dutch, Dubov, Burstein, Lim, Double, and Team Swiss systems.",
   "devDependencies": {
+    "@echecs/tournament": "^2.1.2",
     "@echecs/trf": "^3.1.1",
     "@eslint/js": "^10.0.1",
     "@typescript-eslint/parser": "^8.57.0",
@@ -74,7 +75,6 @@
     "dutch",
     "fide",
     "lim",
-    "no-dependencies",
     "pairings",
     "swiss",
     "team",
@@ -82,6 +82,9 @@
     "typescript"
   ],
   "license": "MIT",
+  "peerDependencies": {
+    "@echecs/tournament": "^2.0.0"
+  },
   "publishConfig": {
     "access": "public"
   },
