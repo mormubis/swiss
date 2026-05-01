@@ -5,7 +5,7 @@
  *
  * @internal Not part of the public API.
  */
-const enum Label {
+enum Label {
   /** Exposed vertex with positive dual — root of alternating tree. */
   OUTER = 0,
   /** Exposed vertex with zero dual — can augment via zero-resistance edge. */
