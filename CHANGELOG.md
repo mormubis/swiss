@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.1.1] - 2026-05-03
+
+### Fixed
+
+- C11 edge weight used signed `colorDiff` instead of absolute color imbalance
+  when comparing two players with absolute color preferences. When both players
+  had negative color differences, the signed comparison picked the wrong
+  player's `repeatedColor` to check, producing suboptimal matchings that
+  violated strong color preferences.
+- `strongColorPreference` predicate incorrectly included absolute preferences.
+  bbpPairings defines strong and absolute as mutually exclusive; fixed to match.
+
 ## [3.1.0] - 2026-05-01
 
 ### Added
