@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.2] - 2026-05-04
+
+### Fixed
+
+- Zero-byes unconditionally assigned FLOAT_DOWN. bbpPairings only assigns
+  FLOAT_DOWN when the bye awards more points than a loss; zero-byes give 0
+  points, so they should get FLOAT_NONE. This inflated C14-C17 float history
+  bits in edge weights for players who received zero-byes.
+
 ## [3.1.1] - 2026-05-03
 
 ### Fixed
