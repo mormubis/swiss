@@ -102,9 +102,7 @@ function absoluteColorPreference(p: PlayerState): boolean {
 }
 
 function strongColorPreference(p: PlayerState): boolean {
-  return (
-    p.preferenceStrength === 'strong' || p.preferenceStrength === 'absolute'
-  );
+  return p.preferenceStrength === 'strong';
 }
 
 function colorPreferencesAreCompatible(
@@ -267,8 +265,8 @@ function computeEdgeWeight(
   // C11
   w.shiftGrow(scoreGroupSizeBits);
   if (lowerInCurrent) {
-    const loCI = lo.colorDiff;
-    const hiCI = hi.colorDiff;
+    const loCI = Math.abs(lo.colorDiff);
+    const hiCI = Math.abs(hi.colorDiff);
     const ok =
       !absoluteColorPreference(lo) ||
       !absoluteColorPreference(hi) ||
