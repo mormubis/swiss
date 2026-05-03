@@ -94,7 +94,9 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
         byeCount++;
         score += game.result;
         colorHistory.push(undefined);
-        floatHistory.push('down');
+        // C++ getFloat: points > pointsForLoss → FLOAT_DOWN, else FLOAT_NONE.
+        // pointsForLoss is 0, so only byes awarding > 0 points get downfloat.
+        floatHistory.push(game.result > 0 ? 'down' : undefined);
         continue;
       }
 
