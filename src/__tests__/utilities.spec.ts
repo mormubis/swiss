@@ -406,7 +406,7 @@ describe('buildPlayerStates', () => {
       expect(a?.unplayedRounds).toBe(1);
     });
 
-    it('does not count bye rounds as unplayed', () => {
+    it('counts bye rounds as unplayed (C++ gameWasPlayed=false for byes)', () => {
       const byeGames: Game[][] = [[{ black: '', result: 1, white: 'A' }]];
       const states = buildPlayerStates(
         [
@@ -416,7 +416,7 @@ describe('buildPlayerStates', () => {
         byeGames,
       );
       const a = states.find((s) => s.id === 'A');
-      expect(a?.unplayedRounds).toBe(0);
+      expect(a?.unplayedRounds).toBe(1);
     });
   });
 
