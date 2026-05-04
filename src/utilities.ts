@@ -91,9 +91,19 @@ function buildPlayerStates(players: Player[], games: Game[][]): PlayerState[] {
 
       // Bye sentinel: black === ''
       if (game.black === '') {
-        byeCount++;
+        // C++ eligibleForBye: player is ineligible when an unplayed match
+        // awards >= pointsForWin (1) OR is a pairing bye (participatedInPairing
+        // && opponent == self). Half-byes (0.5 pts) and zero-byes (0 pts) do
+        // NOT make a player ineligible for future byes.
+        if (game.result >= 1) {
+          byeCount++;
+        }
         score += game.result;
         colorHistory.push(undefined);
+        // C++ gameWasPlayed is false for all bye types, so byes count as
+        // unplayed rounds (same as forfeits). This affects the C9 criterion
+        // (minimize unplayed games of bye assignee).
+        unplayedRounds++;
         // C++ getFloat: points > pointsForLoss → FLOAT_DOWN, else FLOAT_NONE.
         // pointsForLoss is 0, so only byes awarding > 0 points get downfloat.
         floatHistory.push(game.result > 0 ? 'down' : undefined);
