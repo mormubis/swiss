@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.1.3] - 2026-05-04
+
+### Fixed
+
+- Half-byes (0.5 pts) and zero-byes (0 pts) incorrectly made players ineligible
+  for future bye assignment. Only byes awarding >= 1 point (pairing byes, full
+  byes, forfeit wins) should affect eligibility, matching bbpPairings'
+  `eligibleForBye` semantics.
+- Byes were not counted as unplayed rounds. In bbpPairings all bye types have
+  `gameWasPlayed=false`, so they contribute to the C9 criterion (minimize
+  unplayed games of bye assignee). This resolves the last remaining discrepancy
+  in the FIDE endorsement test (5000 seeds).
+
 ## [3.1.2] - 2026-05-04
 
 ### Fixed
